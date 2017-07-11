@@ -2,7 +2,7 @@ defmodule Opentype.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :opentype,
+    [app: :opentype_elixir,
      name: "OpenType",
      version: "0.1.0",
      elixir: "~> 1.4",
