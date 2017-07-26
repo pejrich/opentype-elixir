@@ -2,7 +2,7 @@ defmodule Opentype.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :opentype_elixir,
+    [app: :opentype,
      name: "OpenType",
      version: "0.1.0",
      elixir: "~> 1.4",
@@ -30,7 +30,7 @@ defmodule Opentype.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:unicode_data, "~> 0.1.2"},
+      {:unicode_data, "~> 0.3.0"},
       {:ex_doc, "~> 0.16.0", only: :dev }
     ]
   end

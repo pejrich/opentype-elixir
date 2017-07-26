@@ -208,7 +208,7 @@ defmodule OpenType.Positioning do
     componentSize = nClasses * 2
     # each component is array of offsets (size == size of mark array) to anchor tables
     #  -- one for each mark class including class 0; may be NULL
-    baseArray = la
+    _baseArray = la
     |> Enum.map(fn laTbl ->
       <<nComponents::16, recs::binary>> = laTbl
       recs = binary_part(recs, 0, nComponents * componentSize)
@@ -232,13 +232,13 @@ defmodule OpenType.Positioning do
   end
 
   # type 6 - mark to mark positioning
-  def applyLookupGPOS({6, flag, table, mfs}, gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
+  def applyLookupGPOS({6, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
     # same as format 4, except "base" is another mark
     <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
     markArrayOffset::16, baseArrayOffset::16, _::binary>> = table
     
-    markCoverage = Parser.parseCoverage(Parser.subtable(table, markCoverageOff))
-    baseCoverage = Parser.parseCoverage(Parser.subtable(table, baseCoverageOff))
+    _markCoverage = Parser.parseCoverage(Parser.subtable(table, markCoverageOff))
+    _baseCoverage = Parser.parseCoverage(Parser.subtable(table, baseCoverageOff))
     # baseArray table
     baseTbl = Parser.subtable(table, baseArrayOffset)
     <<nRecs::16, records::binary>> = baseTbl
@@ -248,14 +248,14 @@ defmodule OpenType.Positioning do
     records = for << <<record::binary-size(recordSize)>> <- records >>, do: record
     # each record is array of offsets
     # 6 bytes is a bit of a cheat, can be 6-10 bytes 
-    baseArray = records
+    _baseArray = records
                 |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
                 |> Enum.map(&Enum.map(&1, fn o -> 
                 Parser.parseAnchor(binary_part(baseTbl, o, 6)) end) 
               )
 
     markArrayTbl = Parser.subtable(table, markArrayOffset)
-    markArray = Parser.parseMarkArray(markArrayTbl)
+    _markArray = Parser.parseMarkArray(markArrayTbl)
 
     # adjusted = applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos, [nil])
     #Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
@@ -448,7 +448,7 @@ defmodule OpenType.Positioning do
       if exitA != nil and entryA != nil do
         {entry_x, entry_y} = entryA
         {exit_x, exit_y} = exitA
-        {_, xOff, yOff, xAdv, yAdv} = p
+        {_, xOff, _yOff, xAdv, yAdv} = p
         {_, x2Off, y2Off, x2Adv, y2Adv} = p2
         delta_y = if rtl, do: entry_y - exit_y, else: exit_y - entry_y
         index_delta = gi2 - gi
@@ -556,8 +556,8 @@ defmodule OpenType.Positioning do
         # skip over any matched glyphs
         # TODO: handle flags correctly
         # probably want to prepend earlier ignored glyphs to remaining
-        remaining = Enum.slice(glyphs, length(matched), length(glyphs))
-        remaining_pos = Enum.slice(pos, length(matched), length(pos))
+        _remaining = Enum.slice(glyphs, length(matched), length(glyphs))
+        _remaining_pos = Enum.slice(pos, length(matched), length(pos))
         Logger.debug("#{inspect input} => #{inspect replaced}")
         #{replaced, remaining, remaining_pos}
         {[nil], glyphs, pos}

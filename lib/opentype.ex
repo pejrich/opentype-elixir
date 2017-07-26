@@ -168,7 +168,8 @@ defmodule OpenType do
     # combine indices, apply in order given in LookupList table
     lookups = availableFeatures
                |> Enum.map(fn x -> Enum.at(subF, x) end)
-               |> Enum.filter_map(fn {tag, _} -> tag in active_features end, fn {_, l} -> l end)
+               |> Enum.filter(fn {tag, _} -> tag in active_features end)
+               |> Enum.map(fn {_, l} -> l end)
                |> List.flatten
                |> Enum.sort
                |> Enum.uniq
@@ -176,7 +177,8 @@ defmodule OpenType do
     # per-glyph lookups
     pgl = availableFeatures
           |> Enum.map(fn x -> Enum.at(subF, x) end)
-          |> Enum.filter_map(fn {tag, _} -> tag in per_glyph_features end, fn {tag, l} -> for i <- l, do: {i,tag} end)
+          |> Enum.filter(fn {tag, _} -> tag in per_glyph_features end)
+          |> Enum.map(fn {tag, l} -> for i <- l, do: {i,tag} end)
           |> List.flatten
           |> Map.new
 
@@ -214,7 +216,8 @@ defmodule OpenType do
     # combine indices, apply in order given in LookupList table
     indices = availableFeatures
                |> Enum.map(fn x -> Enum.at(features, x) end)
-               |> Enum.filter_map(fn {tag, _} -> tag in active_features end, fn {_, l} -> l end)
+               |> Enum.filter(fn {tag, _} -> tag in active_features end)
+               |> Enum.map(fn {_, l} -> l end)
                |> List.flatten
                |> Enum.sort
                |> Enum.uniq

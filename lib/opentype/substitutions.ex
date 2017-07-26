@@ -70,7 +70,7 @@ defmodule OpenType.Substitutions do
   end
 
   # GSUB type 3 -- alternate substitution (one-for-one)
-  def applyLookupGSUB({3, _flag, _offsets, table, _mfs}, _gdef, _, tag, pga, glyphs) do
+  def applyLookupGSUB({3, _flag, table, _mfs}, _gdef, _, tag, {glyphs, pga}) do
     <<1::16, covOff::16, nAltSets::16, aoff::binary-size(nAltSets)-unit(16), _::binary>> = table
     coverage = Parser.parseCoverage(Parser.subtable(table, covOff))
     # alternate set tables
@@ -89,7 +89,7 @@ defmodule OpenType.Substitutions do
   end
 
   # GSUB type 4 -- ligature substition (single glyph replaces multiple glyphs)
-  def applyLookupGSUB({4, _flag, table, _mfs}, _gdef, _, tag, _pga, input) do
+  def applyLookupGSUB({4, _flag, table, _mfs}, _gdef, _, tag, {glyphs, pga}) do
     #parse ligature table
     <<1::16, covOff::16, nLigSets::16, lsl::binary-size(nLigSets)-unit(16), _::binary>> = table
     # ligature set tables
@@ -101,11 +101,13 @@ defmodule OpenType.Substitutions do
     if tag != nil do
       IO.puts "GSUB 4 per-glyph #{tag} lookup"
     end
-    applyLigature(coverage, ligaOff, input, [])
+
+    #TODO: figure out per-glyph-annotation for ligature!
+    {applyLigature(coverage, ligaOff, glyphs, []), pga}
   end
 
   #GSUB type 5 -- contextual substitution
-  def applyLookupGSUB({5, _flag, table, _mfs}, _gdef, lookups, tag, _pga, glyphs) do
+  def applyLookupGSUB({5, _flag, table, _mfs}, _gdef, lookups, tag, {glyphs, pga}) do
     <<format::16, details::binary>> = table
     if tag != nil do
       IO.puts "GSUB 5 per-glyph #{tag} lookup"
@@ -152,11 +154,11 @@ defmodule OpenType.Substitutions do
         Logger.debug "GSUB 5 - contextual substitution format #{format}"
         glyphs
     end
-    output
+    {output, pga}
   end
 
   #GSUB type 6 -- chained contextual substitution
-  def applyLookupGSUB({6, flag, table, mfs}, gdef, lookups, tag, _pga, glyphs) do
+  def applyLookupGSUB({6, flag, table, mfs}, gdef, lookups, tag, {glyphs, pga}) do
     if tag != nil do
       IO.puts "GSUB 6 per-glyph #{tag} lookup"
     end
@@ -206,29 +208,22 @@ defmodule OpenType.Substitutions do
         Logger.debug "GSUB 6 - chaining substitution format #{format}"
         glyphs
     end
-    output
+    {output, pga}
   end
 
   #GSUB type 7 -- extended table (handled below as it contains offset argument)
 
   #GSUB type 8 -- reverse chained contextual substitution
-  def applyLookupGSUB({8, _flag, _table, _mfs}, _gdef, _, _tag, _pga, glyphs) do
+  def applyLookupGSUB({8, _flag, _table, _mfs}, _gdef, _, _tag, {glyphs, pga}) do
     Logger.debug "GSUB 8 - reverse chaining substitution"
-    glyphs
-  end
-
-  #unhandled type; log and leave input untouched
-  def applyLookupGSUB({type, _flag, _table, _mfs}, _gdef, _, _tag, _pga, glyphs) do
-    Logger.debug "Unknown GSUB lookup type #{type}"
-    glyphs
+    {glyphs, pga}
   end
 
   #overload
-  def applyLookupGSUB({type, flag, table, mfs}, gdef, lookups, tag, {glyphs, pga}) do
-    out = applyLookupGSUB({type, flag, table, mfs}, gdef, lookups, tag, pga, glyphs)
-    {out, pga}
+  def applyLookupGSUB({type, _flag, _table, _mfs}, _gdef, _lookups, _tag, {glyphs, pga}) do
+    Logger.warn "Unknown GSUB lookup type #{type}"
+    {glyphs, pga}
   end
-
 
   # GSUB type 7 -- extended table
   def applyLookupGSUB({7, flag, offsets, table, mfs}, gdef, lookups, tag, {glyphs, pga}) do
