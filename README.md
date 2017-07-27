@@ -1,7 +1,7 @@
 # OpenType
 
 [![Build Status](https://travis-ci.org/jbowtie/opentype-elixir.svg?branch=master)](https://travis-ci.org/jbowtie/opentype-elixir)
-[![Hex Version](https://img.shields.io/hexpm/v/unicode_data.svg)](https://hex.pm/packages/opentype)
+[![Hex Version](https://img.shields.io/hexpm/v/opentype.svg)](https://hex.pm/packages/opentype)
 
 
 This pure Elixir module provides facilities for working with OpenType and TrueType fonts. To date it is able to parse them, perform glyph
