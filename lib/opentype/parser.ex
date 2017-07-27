@@ -236,18 +236,18 @@ defmodule OpenType.Parser do
       # unicode range 1-4 are bitflags that identify charsets
       # selFlags = italic, underscore, bold, strikeout, outlined...
       # TODO: conform to fsType restrictions
-      <<os2ver::16, avgCharWidth::signed-16, usWeightClass::16,
-      usWidthClass::16, fsType::16,
-      subXSize::signed-16,subYSize::signed-16,
-      subXOffset::signed-16,subYOffset::signed-16,
-      superXSize::signed-16,superYSize::signed-16,
-      superXOffset::signed-16,superYOffset::signed-16,
-      strikeoutSize::signed-16, strikeoutPos::signed-16,
-      familyClass::signed-16, panose::80,
-      unicodeRange1::32, unicodeRange2::32, unicodeRange3::32, unicodeRange4::32,
-      vendorID::32, selFlags::16, firstChar::16, lastChar::16,
+      <<os2ver::16, _avgCharWidth::signed-16, usWeightClass::16,
+      _usWidthClass::16, _fsType::16,
+      _subXSize::signed-16,_subYSize::signed-16,
+      _subXOffset::signed-16,_subYOffset::signed-16,
+      _superXSize::signed-16,_superYSize::signed-16,
+      _superXOffset::signed-16,_superYOffset::signed-16,
+      _strikeoutSize::signed-16, _strikeoutPos::signed-16,
+      familyClass::signed-16, _panose::80,
+      _unicodeRange1::32, _unicodeRange2::32, _unicodeRange3::32, _unicodeRange4::32,
+      _vendorID::32, _selFlags::16, _firstChar::16, _lastChar::16,
       typoAscend::signed-16,typoDescend::signed-16,
-      typoLineGap::signed-16, winAscent::16, winDescent::16,
+      _typoLineGap::signed-16, _winAscent::16, _winDescent::16,
       v0rest::binary>> = raw_os2
 
       Logger.debug "OS/2 ver #{os2ver} found"
@@ -263,9 +263,9 @@ defmodule OpenType.Parser do
       # if we have a v2 or higher struct we can read out
       # the xHeight and capHeight
       capHeight = if os2ver > 1 and v1rest do
-        <<xHeight::signed-16, capHeight::signed-16,
-        defaultChar::16, breakChar::16, maxContext::16,
-        v2rest::binary>> = v1rest
+        <<_xHeight::signed-16, capHeight::signed-16,
+        _defaultChar::16, _breakChar::16, _maxContext::16,
+        _v2rest::binary>> = v1rest
         capHeight
       else
         0.7 * unitsPerEm
@@ -573,7 +573,7 @@ defmodule OpenType.Parser do
     # mark glyph sets (may be NULL)
     glyphSets = if markGlyphSets != nil do
       mgs = subtable(table, markGlyphSets)
-      <<fmt::16, nGlyphSets::16, gsets::binary-size(nGlyphSets)-unit(32), _::binary>> = mgs 
+      <<_fmt::16, nGlyphSets::16, gsets::binary-size(nGlyphSets)-unit(32), _::binary>> = mgs 
       for << <<off::32>> <- gsets>>, do: parseCoverage(subtable(mgs, off))
     else
       nil
