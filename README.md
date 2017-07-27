@@ -1,5 +1,9 @@
 # OpenType
 
+[![Build Status](https://travis-ci.org/jbowtie/opentype-elixir.svg?branch=master)](https://travis-ci.org/jbowtie/opentype-elixir)
+[![Hex Version](https://img.shields.io/hexpm/v/unicode_data.svg)](https://hex.pm/packages/opentype)
+
+
 This pure Elixir module provides facilities for working with OpenType and TrueType fonts. To date it is able to parse them, perform glyph
 substitution and positioning, and handle shaping for European and cursive scripts (specifically scripts like Arabic, Syriac and N'ko).
 
@@ -17,8 +21,4 @@ def deps do
   [{:opentype, "~> 0.2.0"}]
 end
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/opentype](https://hexdocs.pm/opentype).
 
