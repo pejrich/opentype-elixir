@@ -1,13 +1,19 @@
 defmodule Opentype.Mixfile do
   use Mix.Project
 
+  @version "0.2.0"
+
   def project do
     [app: :opentype,
      name: "OpenType",
-     version: "0.1.0",
+     version: @version,
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
+     test_coverage: [tool: ExCoveralls],
+     preferred_cli_env: ["coveralls": :test, "coveralls.detail": :test, "coveralls.post": :test, "coveralls.html": :test],
+     description: "Provides facilities for working with OpenType fonts.",
+     package: package(),
      deps: deps()]
   end
 
@@ -31,7 +37,18 @@ defmodule Opentype.Mixfile do
   defp deps do
     [
       {:unicode_data, "~> 0.3.0"},
+      {:excoveralls, "~> 0.7.1", only: :test},
       {:ex_doc, "~> 0.16.0", only: :dev }
+    ]
+  end
+
+  defp package do
+    [licenses: ["Apache 2.0"],
+     name: "opentype",
+     maintainers: ["jbowtie/John C Barstow"],
+     links: %{
+       "GitHub" => "https://github.com/jbowtie/opentype-elixir",
+     }
     ]
   end
 end
