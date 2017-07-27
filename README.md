@@ -1,6 +1,7 @@
 # OpenType
 
 [![Build Status](https://travis-ci.org/jbowtie/opentype-elixir.svg?branch=master)](https://travis-ci.org/jbowtie/opentype-elixir)
+[![codecov](https://codecov.io/gh/jbowtie/opentype-elixir/branch/master/graph/badge.svg)](https://codecov.io/gh/jbowtie/opentype-elixir)
 [![Hex Version](https://img.shields.io/hexpm/v/unicode_data.svg)](https://hex.pm/packages/opentype)
 
 
