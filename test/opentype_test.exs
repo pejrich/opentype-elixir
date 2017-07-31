@@ -5,8 +5,7 @@ defmodule OpenTypeTest do
   alias OpenType.Layout
 
   test "parse Truetype font metrics" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoSansCJKjp-Bold.otf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoSansCJKjp-Bold.otf")
     assert 733 == ttf.capHeight
     assert -120 == ttf.descent
     assert 880 == ttf.ascent
@@ -18,29 +17,25 @@ defmodule OpenTypeTest do
   end
 
   test "Basic CMAP support" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
     {glyphs, _} = OpenType.layout_text(ttf, "ABC")
     assert glyphs == [36, 37, 38]
   end
 
   test "Apply OpenType substitutions (GSUB 4) - exercise ligature" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
     {glyphs, _} = OpenType.layout_text(ttf, "ffl", ["liga"])
     assert glyphs == [603]
   end
 
   test "Apply OpenType substitutions (GSUB 6) - exercise chained" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/SourceSansPro-Regular.otf")
+    ttf = OpenType.parse_file("./test/support/fonts/SourceSansPro-Regular.otf")
     {glyphs, _} = OpenType.layout_text(ttf, "1/2", ["liga", "frac"])
     assert glyphs == [1617, 1726, 1604]
   end
 
   test "Apply mark-to-base positioning" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoSans-Bold.ttf")
     {glyphs, pos} = OpenType.layout_text(ttf, "bi\u0300g", ["ccmp", "mark"])
     # ccmp will replace i with dotless variant
     assert glyphs == [69, 243, 608, 74]
@@ -55,8 +50,7 @@ defmodule OpenTypeTest do
   end
 
   test "Exercise GSUB 2 - one-to-many substitution" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
     # include a following character to ensure returned glyphs are flattened properly
     # Qaf, Alef
     {glyphs, _} = OpenType.layout_text(ttf, "\u0642\u0627", ["ccmp"])
@@ -65,8 +59,7 @@ defmodule OpenTypeTest do
   end
 
   test "Test positional substitutions" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
 
     # no substitutions
     {glyphs, _} = OpenType.layout_text(ttf, "\u0644", [])
@@ -91,8 +84,7 @@ defmodule OpenTypeTest do
   end
 
   test "Urdu cursive" do
-    ttf = OpenType.new
-          |> OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
+    ttf = OpenType.parse_file("./test/support/fonts/NotoNastaliqUrdu-Regular.ttf")
 
     s = Layout.detect_script("\u062D\u062D\u062D\u062D\u062D\u062D\u0628")
     assert s == "arab"

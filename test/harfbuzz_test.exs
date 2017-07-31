@@ -22,8 +22,7 @@ defmodule GutenexHarfbuzzTest do
 
   def harfbuzz_test(font, text, expected) do
     filename = "./test/support/fonts/sha1sum/" <> font
-    ttf = OpenType.new
-          |> OpenType.parse_file(filename)
+    ttf = OpenType.parse_file(filename)
     {glyphs, pos} = OpenType.layout_text(ttf, text)
     hb = harfbuzz(glyphs, pos)
     assert hb == expected

@@ -25,10 +25,10 @@ defmodule OpenType do
     }
   end
 
-  def parse_file(ttf, filename) do
+  def parse_file(filename) do
     f = File.open!(filename)
     data = IO.binread f, :all
-    ttf |> parse(data)
+    new |> parse(data)
   end
   # entry point for parsing a file
   # TODO: we should probably take raw data
