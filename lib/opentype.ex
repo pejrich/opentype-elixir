@@ -8,7 +8,11 @@ defmodule OpenType do
   alias OpenType.Positioning
   alias OpenType.Layout
 
-  # empty structure with sensible defaults
+  @doc """
+  Create an empty structure with sensible defaults.
+
+  This will likely be replaced in future with a proper struct.
+  """
   def new do
     %{
       :version => 0, :tables => [], :name => nil, :bbox => [],
@@ -25,15 +29,21 @@ defmodule OpenType do
     }
   end
 
+  @doc """
+  Open and parse a font file.  Returns the parsed font structure.
+
+  The current version assumes an uncompressed OpenType or TrueType font.
+  For a font collection, it returns only the first font in the collection.
+  """
   def parse_file(filename) do
     f = File.open!(filename)
     data = IO.binread f, :all
     new() |> parse(data)
   end
-  # entry point for parsing a file
-  # TODO: we should probably take raw data
-  # instead (or in addition to?) a filename
-  # see what Elixir best practice is
+
+  @doc """
+  Parse the binary data that makes up a font.
+  """
   def parse(ttf, data) do
     ttf
     |> Parser.extractVersion(data)
@@ -45,6 +55,13 @@ defmodule OpenType do
     |> Parser.extractFeatures(data)
   end
 
+  @doc """
+  Returns the list of OpenType features that are enabled by default.
+
+  This list is determined by the OpenType specification. Note that fonts are not required
+  to support these features, nor are they necessarily used by all scripts (for example, the
+  features for positional forms are typically only used by cursive scripts such as Arabic).
+  """
   def default_features do
       [
         "ccmp", "locl", # preprocess (compose/decompose, local forms)
@@ -58,7 +75,20 @@ defmodule OpenType do
       ]
   end
 
-  # returns a list of glyphs and positioning information
+  @doc """
+  Returns a series of positioned glyphs (a tuple of {glyphs, positions}).
+
+  Once a font has been parsed, this function will apply OpenType features to perform substitution
+  and positioning. If no features are specified, `default_features/0` will be enabled.
+
+  This version does not apply width or height constraints, line breaking, or a bidirectional algorithm.
+  Such layout logic is assumed to be handled by the caller.
+
+  If the script tag is not specified, it will attempt to autodetect it using `OpenType.Layout.detect_script/1`.
+  If undetected or unsupported by the font it will fall back to the "DFLT" (default) script tag.
+
+  If the language tag is not specified, it will follow the spec and fall back to the default language.
+  """
   def layout_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
 
     # use the font CMAP to convert the initial text
@@ -102,7 +132,11 @@ defmodule OpenType do
     {output, pos}
   end
 
-  # discover the supported opentype features
+  @doc """
+  Discover the OpenType features supported by the font.
+
+  This can be used to present optional features to a layout engine or end user.
+  """
   def discover_features(ttf) do
     #TODO: add kern if there is a 'kern' table but no GPOS
     {_, gsub_features, _} = ttf.substitutions
@@ -206,7 +240,7 @@ defmodule OpenType do
 
   # given a script and language, get the appropriate features
   # (falling back as appropriate)
-  def getFeatures(scripts, script, lang) do
+  defp getFeatures(scripts, script, lang) do
     # Fallback to "DFLT", "dflt", or "latn" script; else ignore all
     selected_script = scripts[script]  || scripts["DFLT"] || scripts["dflt"] || scripts["latn"] || %{}
     # Fallback to nil (default) language for script
