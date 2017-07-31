@@ -37,7 +37,7 @@ defmodule OpenType.Font do
   end
 
   def handle_cast({:parse, filename}, ttf) do
-    parsed = OpenType.parse(ttf, filename)
+    parsed = OpenType.parse_file(filename)
     {:noreply, parsed}
   end
   def handle_call(:ttf, _from, ttf) do
