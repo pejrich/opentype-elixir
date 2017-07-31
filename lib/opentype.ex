@@ -28,7 +28,7 @@ defmodule OpenType do
   def parse_file(filename) do
     f = File.open!(filename)
     data = IO.binread f, :all
-    new |> parse(data)
+    new() |> parse(data)
   end
   # entry point for parsing a file
   # TODO: we should probably take raw data
@@ -43,6 +43,19 @@ defmodule OpenType do
     |> Parser.markEmbeddedPart(data)
     |> Parser.extractCMap(data)
     |> Parser.extractFeatures(data)
+  end
+
+  def default_features do
+      [
+        "ccmp", "locl", # preprocess (compose/decompose, local forms)
+        "mark", "mkmk", "mset", # marks (mark-to-base, mark-to-mark, mark position via substitution)
+        "clig", "liga", "rlig", # ligatures (contextual, standard, required)
+        "calt", "rclt", # contextual alts (standard, required)
+        "kern", "palt", # when kern enabled, also enable palt
+        #"opbd", "lfbd", "rtbd", # optical bounds -- requires app support to identify bounding glyphs?
+        "curs", # cursive (required; best tested with arabic font)
+        "isol", "fina", "medi", "init", # positional forms (required; best tested with arabic font)
+      ]
   end
 
   # returns a list of glyphs and positioning information
@@ -67,16 +80,7 @@ defmodule OpenType do
     # see OpenType feature registry for required, never disabled,
     # and recommended features
     features = if features == nil do
-      [
-        "ccmp", "locl", # preprocess (compose/decompose, local forms)
-        "mark", "mkmk", "mset", # marks (mark-to-base, mark-to-mark, mark position via substitution)
-        "clig", "liga", "rlig", # ligatures (contextual, standard, required)
-        "calt", "rclt", # contextual alts (standard, required)
-        "kern", "palt", # when kern enabled, also enable palt
-        #"opbd", "lfbd", "rtbd", # optical bounds -- requires app support to identify bounding glyphs?
-        "curs", # cursive (required; best tested with arabic font)
-        "isol", "fina", "medi", "init", # positional forms (required; best tested with arabic font)
-      ]
+      default_features()
     else
       features
     end
