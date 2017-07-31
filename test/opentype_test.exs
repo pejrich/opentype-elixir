@@ -2,7 +2,6 @@ defmodule OpenTypeTest do
   use ExUnit.Case
   doctest OpenType
   alias OpenType
-  alias OpenTypeFont
   alias OpenType.Layout
 
   test "parse Truetype font metrics" do
