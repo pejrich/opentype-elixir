@@ -14,7 +14,7 @@ defmodule OpenType.Parser do
     _entrySelector ::16,
     _rangeShift ::16,
     remainder :: binary>> = data
-    {tables, _} = readTables([], remainder, numTables)
+    tables = readTables(remainder, numTables)
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
   end
@@ -24,7 +24,7 @@ defmodule OpenType.Parser do
     _entrySelector :: size(16),
     _rangeShift :: size(16),
     remainder :: binary>> = data
-    {tables, _} = readTables([], remainder, numTables)
+    tables = readTables(remainder, numTables)
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
   end
@@ -34,14 +34,14 @@ defmodule OpenType.Parser do
     numSubfonts::32, rem::binary>> = data
     #read in 32-bit subfont offsets
     {offsets, _remaining} = readOffset([], rem, numSubfonts)
-    subfont = binary_part(full_data, offsets[0], byte_size(full_data)-offsets[0])
+    subfont = subtable(full_data, offsets[0])
     <<_ttfVersion::32, numTables::16,
     _searchRange::16,
     _entrySelector :: size(16),
     _rangeShift :: size(16),
     remainder :: binary>> = subfont
     #IO.puts "Subfont 0 has #{numTables} tables"
-    {tables, _} = readTables([], remainder, numTables)
+    tables = readTables(remainder, numTables)
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
   end
@@ -52,7 +52,7 @@ defmodule OpenType.Parser do
     _rangeShift :: size(16),
     remainder :: binary>> = data
     #IO.puts "Has #{numTables} tables"
-    {tables, _} = readTables([], remainder, numTables)
+    tables = readTables(remainder, numTables)
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
   end
@@ -137,16 +137,17 @@ defmodule OpenType.Parser do
     end
   end
 
+  defmodule FontTable do
+    defstruct name: "", checksum: 0, offset: 0, length: 0
+  end
+
   # read in the font tables
-  defp readTables(tables, data, 0) do
-    {tables, data}
+  defp readTables(data, numTables) do
+    # each table definition is 16 bytes
+    tableDefs = binary_part(data, 0, numTables * 16)
+    for << <<tag::binary-size(4), checksum::32, offset::32, length::32>> <- tableDefs >>, do: %FontTable{name: tag, checksum: checksum, offset: offset, length: length}
   end
-  defp readTables(tables, <<tag::binary-size(4), checksum::32, offset::32, length::32, data::binary>>, numTables) do
-    #for each table
-    table = %{name: tag, checksum: checksum, offset: offset, length: length}
-    #4-char tag, checksum, offset, length
-    readTables([table | tables], data, numTables-1)
-  end
+ 
   defp readOffset(offsets, data, 0), do: {offsets, data}
   defp readOffset(offsets, <<offset::32, rem::binary>>, count) do
     readOffset([offset | offsets], rem, count-1)
@@ -717,7 +718,7 @@ defmodule OpenType.Parser do
     <<nRecs::16, records::binary-size(nRecs)-unit(32), _::binary>> = table
     markArray = for << <<markClass::16, anchorTableOffset::16>> <- records >>, do: {markClass, anchorTableOffset}
     markArray
-    |> Enum.map(fn {c,o} -> {c, parseAnchor(binary_part(table, o, byte_size(table) - o))} end)
+    |> Enum.map(fn {c,o} -> {c, parseAnchor(subtable(table, o))} end)
   end
 
 

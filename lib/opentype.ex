@@ -25,13 +25,16 @@ defmodule OpenType do
     }
   end
 
+  def parse_file(ttf, filename) do
+    f = File.open!(filename)
+    data = IO.binread f, :all
+    ttf |> parse(data)
+  end
   # entry point for parsing a file
   # TODO: we should probably take raw data
   # instead (or in addition to?) a filename
   # see what Elixir best practice is
-  def parse(ttf, filename) do
-    f = File.open!(filename)
-    data = IO.binread f, :all
+  def parse(ttf, data) do
     ttf
     |> Parser.extractVersion(data)
     |> Parser.readHeader(data)
@@ -45,7 +48,7 @@ defmodule OpenType do
   # returns a list of glyphs and positioning information
   def layout_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
 
-    # use the font CMAP to convert the initial text 
+    # use the font CMAP to convert the initial text
     # into a series of glyphs
     glyphs = text
     |> String.to_charlist
@@ -91,7 +94,7 @@ defmodule OpenType do
 
     {output, pos} = output
                     |> position_glyphs(ttf, script, lang, features)
-    
+
     {output, pos}
   end
 
@@ -138,7 +141,7 @@ defmodule OpenType do
 
     # apply the lookups and return the resulting {glyphs, pga}
     # (pga length changes when glyphs length changes)
-    {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) -> 
+    {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
                 if pgl != nil and Map.has_key?(pgl, x) do
                   Substitutions.applyLookupGSUB(Enum.at(subL, x), ttf.definitions, subL, Map.get(pgl, x), acc)
                 else
@@ -207,4 +210,3 @@ defmodule OpenType do
   end
 
 end
-
