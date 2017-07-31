@@ -36,7 +36,7 @@ defmodule OpenType.Font do
     GenServer.call(pid, :scale)
   end
 
-  def handle_cast({:parse, filename}, ttf) do
+  def handle_cast({:parse, filename}, _ttf) do
     parsed = OpenType.parse_file(filename)
     {:noreply, parsed}
   end
