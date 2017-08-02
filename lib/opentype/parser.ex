@@ -1,4 +1,5 @@
 defmodule OpenType.Parser do
+  @moduledoc false
   use Bitwise, only_operators: true
   require Logger
 
@@ -8,22 +9,12 @@ defmodule OpenType.Parser do
   end
 
   # read in the font header
-  def readHeader({%{version: 0x00010000}=ttf, data}, _full) do
+  def readHeader({%{version: v}=ttf, data}, _full) when v in [0x00010000, 0x74727565, 0x4F54544F] do
     <<numTables::16,
     _searchRange::16,
-    _entrySelector ::16,
-    _rangeShift ::16,
-    remainder :: binary>> = data
-    tables = readTables(remainder, numTables)
-    isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :isCFF => isCFF}
-  end
-  def readHeader({%{version: 0x74727565}=ttf, data}, _full) do
-    <<numTables::16,
-    _searchRange::16,
-    _entrySelector :: size(16),
-    _rangeShift :: size(16),
-    remainder :: binary>> = data
+    _entrySelector::16,
+    _rangeShift::16,
+    remainder::binary>> = data
     tables = readTables(remainder, numTables)
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
@@ -45,19 +36,8 @@ defmodule OpenType.Parser do
     isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
     %{ttf | :tables => tables, :isCFF => isCFF}
   end
-  def readHeader({%{version: 0x4F54544F}=ttf, data}, _) do
-    <<numTables::16,
-    _searchRange::16,
-    _entrySelector :: size(16),
-    _rangeShift :: size(16),
-    remainder :: binary>> = data
-    #IO.puts "Has #{numTables} tables"
-    tables = readTables(remainder, numTables)
-    isCFF = Enum.any?(tables, fn(x) -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :isCFF => isCFF}
-  end
   def readHeader({ttf, _data}, _) do
-    #IO.puts "TODO: unknown TTF version"
+    Logger.error("Unknown font format version")
     ttf
   end
 
@@ -138,11 +118,12 @@ defmodule OpenType.Parser do
   end
 
   defmodule FontTable do
+    @moduledoc false
     defstruct name: "", checksum: 0, offset: 0, length: 0
   end
 
   # read in the font tables
-  defp readTables(data, numTables) do
+  def readTables(data, numTables) do
     # each table definition is 16 bytes
     tableDefs = binary_part(data, 0, numTables * 16)
     for << <<tag::binary-size(4), checksum::32, offset::32, length::32>> <- tableDefs >>, do: %FontTable{name: tag, checksum: checksum, offset: offset, length: length}
@@ -583,13 +564,16 @@ defmodule OpenType.Parser do
     _mgs = markGlyphSets
     %{attachments: markAttachClass, classes: glyphClassDef, mark_sets: glyphSets}
   end
-  defp parseFeatures(data) do
+
+  # this should probably be an actual map of tag: [indices]
+  def parseFeatures(data) do
     <<nFeatures::16, fl::binary-size(nFeatures)-unit(48), _::binary>> = data
     features = for << <<tag::binary-size(4), offset::16>> <- fl >>, do: {tag, offset}
     features
     |> Enum.map(fn {t, o} -> readLookupIndices(t, o, data) end)
   end
-  #returns {lookupType, lookupFlags, [subtable offsets], <<raw table bytes>>}
+
+  #returns {lookupType, lookupFlags, [subtable offsets], <<raw table bytes>>, mark filtering set}
   defp getLookupTable(offset, data) do
       tbl = subtable(data, offset)
       <<lookupType::16, flags::16, nsubtables::16, st::binary-size(nsubtables)-unit(16), rest::binary>> = tbl
@@ -630,10 +614,10 @@ defmodule OpenType.Parser do
   end
   defp readLookupIndices(tag, offset, data) do
     lookup_part = subtable(data, offset)
-    <<_featureParamsOffset::16, nLookups::16, fx::binary-size(nLookups)-unit(16), _::binary>> = lookup_part
-    #if featureParamsOffset != 0 do
-      #  Logger.debug "Feature #{tag} has feature params"
-      #end
+    <<featureParamsOffset::16, nLookups::16, fx::binary-size(nLookups)-unit(16), _::binary>> = lookup_part
+    if featureParamsOffset != 0 do
+      Logger.debug "Feature #{tag} has feature params"
+    end
     indices = for << <<x::16>> <- fx >>, do: x
     {tag, indices}
   end

@@ -32,4 +32,21 @@ defmodule OpenType.ParserTest do
     assert actual == {-10, 20}
   end
 
+  test "parse features (tag-to-lookup index map)" do
+    # two features with two indices each
+    #  'liga': 1, 2
+    #  'dlig': 3, 4, 5
+    actual = Parser.parseFeatures(<<2::16, "liga", 14::16, "dlig", 22::16, #header
+                                    0::16, 2::16, 1::16, 2::16, #liga
+                                    0::16, 3::16, 3::16, 4::16, 5::16 #dlig
+                                    >>)
+    assert actual == [{"liga", [1, 2]}, {"dlig", [3, 4, 5]}]
+  end
+
+
+  test "parse table definition" do
+    actual = Parser.readTables(<<"kern", 1::32, 2::32, 3::32>>, 1)
+    assert actual == [%Parser.FontTable{name: "kern", checksum: 1, offset: 2, length: 3}]
+  end
+
 end
