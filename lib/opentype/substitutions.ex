@@ -220,7 +220,7 @@ defmodule OpenType.Substitutions do
   end
 
   #overload
-  def applyLookupGSUB({type, _flag, _table, _mfs}, _gdef, _lookups, _tag, {glyphs, pga}) do
+  def applyLookupGSUB({type, _flag, _table, _mfs}, _gdef, _lookups, _tag, {glyphs, pga}) when is_integer(type) do
     Logger.warn "Unknown GSUB lookup type #{type}"
     {glyphs, pga}
   end
@@ -235,11 +235,95 @@ defmodule OpenType.Substitutions do
     #for each subtable
     Enum.reduce(subtables, {glyphs, pga}, fn ({type, tbl}, input) -> applyLookupGSUB({type, flag, tbl, mfs}, gdef, lookups, tag, input) end)
   end
-  def applyLookupGSUB({type, flag, offsets, table, mfs}, gdef, lookups, tag, {glyphs, pga}) do
+  def applyLookupGSUB({type, flag, offsets, table, mfs}, gdef, lookups, tag, {glyphs, pga}) when is_integer(type) do
     #for each subtable
     Enum.reduce(offsets, {glyphs, pga}, fn (offset, input) -> applyLookupGSUB({type, flag, Parser.subtable(table, offset), mfs}, gdef, lookups, tag, input) end)
   end
 
+  # TODO: this is transitional -- we need to seperate parse and apply steps
+  def applyLookupGSUB({:parsed, type, flag, mfs, parsed_data}, gdef, lookups, tag, {glyphs, pga}) do
+    #for each subtable
+    Enum.reduce(parsed_data, {glyphs, pga}, fn (subdata, input) -> apply_substitution({:parsed, type, flag, mfs, subdata}, gdef, lookups, tag, input) end)
+  end
+
+  def apply_substitution({:parsed, 1, _flag, _mfs, sub}, _gdef, _lookups, tag, {glyphs, pga}) do
+    {coverage, replacements} = sub
+    replace = fn g -> applySingleSub(g, coverage, replacements) end
+    output = if tag != nil do
+      IO.puts "GSUB 1 per-glyph #{tag} lookup"
+      glyphs
+      |> Enum.with_index
+      |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
+      |> Enum.map(fn {g, assignment} -> if assignment == tag, do: replace.(g), else: g end)
+    else
+      Enum.map(glyphs, replace)
+    end
+    {output, pga}
+  end
+
+  #GSUB 2 - multiple substitution (expand one glyph into several)
+  def apply_substitution({:parsed, 2, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, pga}) do
+    {coverage, sequences} = sub
+    output = if tag != nil do
+      glyphs
+      |> Enum.with_index
+      |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
+      |> Enum.map(fn {g, assignment} -> if assignment == tag, do: applyMultiSub(g, coverage, sequences), else: g end)
+    else
+      glyphs
+      |> Enum.map(fn g -> applyMultiSub(g, coverage, sequences) end)
+    end
+
+    #ensure we preserve the per-glyph tags during expansion
+    pga_out = if pga do
+      output
+         |> Enum.with_index
+         |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
+         |> Enum.map(fn {g, assignment} -> if is_list(g), do: List.duplicate(assignment, length(g)), else: assignment  end)
+         |> List.flatten
+    else
+      pga
+    end
+
+    {List.flatten(output), pga_out}
+  end
+
+  # parse a lookup (which is expected to have multiple subtables)
+  def parse_lookup(type, flag, mfs, offsets, data) do
+    offsets
+    |> Enum.map(fn o -> parse_lookup(type, flag, mfs, Parser.subtable(data, o)) end)
+  end
+
+  # GSUB 1 - return {coverage, delta | [replacements]}
+  def parse_lookup(1, _flag, _mfs, data) do
+    <<format::16, covOff::16, rest::binary>> = data
+    coverage = Parser.parseCoverage(Parser.subtable(data, covOff))
+    replacements = case format do
+      1 ->
+        <<delta::16, _::binary>> = rest
+        delta
+      2 ->
+        <<nGlyphs::16, ga::binary-size(nGlyphs)-unit(16), _::binary>> = rest
+        for << <<x::16>> <- ga >>, do: x
+      _ ->
+        nil
+    end
+    {coverage, replacements}
+  end
+
+  # GSUB 2 - return {coverage, sequences}
+  def parse_lookup(2, _flag, _mfs, data) do
+    <<_format::16, covOff::16, nSeq::16, subOff::binary-size(nSeq)-unit(16), _::binary>> = data
+    coverage = Parser.parseCoverage(Parser.subtable(data, covOff))
+    # sequence tables
+    seqOffsets = for << <<x::16>> <- subOff >>, do: x
+
+    # sequence table structure identical to alt table
+    sequences = Enum.map(seqOffsets, fn seqOffset -> Parser.parseAlts(data, seqOffset) end)
+    {coverage, sequences}
+  end
+
+  defp applySingleSub(g, _coverage, nil), do: g
   defp applySingleSub(g, coverage, delta) when is_integer(delta) do
     coverloc = findCoverageIndex(coverage, g)
     if coverloc != nil, do: g + delta, else: g
@@ -248,6 +332,7 @@ defmodule OpenType.Substitutions do
     coverloc = findCoverageIndex(coverage, g)
     if coverloc != nil, do: Enum.at(replacements, coverloc), else: g
   end
+
   defp applyMultiSub(g, coverage, seq) do
     coverloc = findCoverageIndex(coverage, g)
     if coverloc != nil do

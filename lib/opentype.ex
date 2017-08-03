@@ -151,6 +151,22 @@ defmodule OpenType do
     Enum.any?(ttf.tables, fn(x) -> x.name == name end)
   end
 
+  defp parseLookup(index, lookups) do
+    lookup = lookups |> Enum.at(index)
+    parsed = case lookup do
+      {1, flag, offsets, table, mfs} -> {:parsed, 1, flag, mfs, Substitutions.parse_lookup(1, flag, mfs, offsets, table)}
+      {2, flag, offsets, table, mfs} -> {:parsed, 2, flag, mfs, Substitutions.parse_lookup(2, flag, mfs, offsets, table)}
+      _ -> lookup
+    end
+    # case: contains offsets
+    # case: already parsed
+    if parsed != lookup do
+      lookups |> List.replace_at(index, parsed)
+    else
+      lookups
+    end
+  end
+
   # subtitute ligatures, positional forms, stylistic alternates, etc
   # based upon the script, language, and active OpenType features
   defp handle_substitutions(glyphs, ttf, script, lang, active_features, {per_glyph_features, per_glyph_assignments}) do
@@ -169,6 +185,10 @@ defmodule OpenType do
                |> Enum.sort
                |> Enum.uniq
 
+    #TODO: we know which lookups are going to be used
+    # we can parse now, update subL, apply below!
+    lookup_cache = Enum.reduce(lookups, subL, fn(x, cache) -> parseLookup(x, cache) end)
+
     # per-glyph lookups
     pgl = availableFeatures
           |> Enum.map(fn x -> Enum.at(subF, x) end)
@@ -181,9 +201,9 @@ defmodule OpenType do
     # (pga length changes when glyphs length changes)
     {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
                 if pgl != nil and Map.has_key?(pgl, x) do
-                  Substitutions.applyLookupGSUB(Enum.at(subL, x), ttf.definitions, subL, Map.get(pgl, x), acc)
+                  Substitutions.applyLookupGSUB(Enum.at(lookup_cache, x), ttf.definitions, subL, Map.get(pgl, x), acc)
                 else
-                  Substitutions.applyLookupGSUB(Enum.at(subL, x), ttf.definitions, subL, nil, acc)
+                  Substitutions.applyLookupGSUB(Enum.at(lookup_cache, x), ttf.definitions, subL, nil, acc)
                 end
     end)
     g
