@@ -687,10 +687,6 @@ defmodule OpenType.Substitutions do
     # decompose the flag
     <<attachmentType::8, _::3, useMarkFilteringSet::1, ignoreMark::1, ignoreLig::1, ignoreBase::1, _rtl::1>> = <<flag::16>>
 
-    if useMarkFilteringSet != 0 do
-      Logger.debug "MFS #{mfs}"
-    end
-
     cond do
       # short circuit - if no flags, we aren't skipping anything
       flag == 0 -> false
