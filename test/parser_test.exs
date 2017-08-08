@@ -33,7 +33,7 @@ defmodule OpenType.ParserTest do
   end
 
   test "parse features (tag-to-lookup index map)" do
-    # two features with two indices each
+    # two features with multiple indices each
     #  'liga': 1, 2
     #  'dlig': 3, 4, 5
     actual = Parser.parseFeatures(<<2::16, "liga", 14::16, "dlig", 22::16, #header

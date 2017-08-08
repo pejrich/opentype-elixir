@@ -38,21 +38,15 @@ defmodule OpenType.Positioning do
 
   #type 1 - single positioning
   def applyLookupGPOS({1, _flag, table, _mfs}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
-    <<fmt::16, covOff::16, valueFormat::16, rest::binary>> = table
-    coverage = Parser.parseCoverage(Parser.subtable(table, covOff))
-    valSize = Parser.valueRecordSize(valueFormat)
+    {fmt, coverage, values} = parse_lookup(1, table)
+
     adjusted = case fmt do
     1 ->
-      <<val::binary-size(valSize), _::binary>> = rest
-      val = Parser.readPositioningValueRecord(valueFormat, val)
       Enum.map(glyphs, fn g ->
         coverloc = findCoverageIndex(coverage, g)
-        if coverloc != nil, do: val, else: nil
+        if coverloc != nil, do: values, else: nil
       end)
     2 ->
-      <<nVals::16, _::binary>> = rest
-      recs = binary_part(rest, 16, nVals * valSize)
-      values = for << <<val::binary-size(valSize)>> <- recs >>, do: Parser.readPositioningValueRecord(valueFormat, val)
       Enum.map(glyphs, fn g ->
         coverloc = findCoverageIndex(coverage, g)
         if coverloc != nil, do: Enum.at(values, coverloc), else: nil
@@ -64,48 +58,17 @@ defmodule OpenType.Positioning do
 
   # type 2 - pair positioning (ie, kerning)
   def applyLookupGPOS({2, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    <<fmt::16, covOff::16, record1::16, record2::16, rest::binary>> = table
+    {fmt, values} = parse_lookup(2, table)
     kerning = case fmt do
       1 ->
-        # FMT 1 - identifies individual glyphs
-        # pair set table
-        <<nPairs::16, pairOff::binary-size(nPairs)-unit(16), _::binary>> = rest
-        pairsetOffsets = for << <<x::16>> <- pairOff >>, do: x
-        # coverage table
-        coverage = Parser.parseCoverage(Parser.subtable(table, covOff))
-        # parse the pair sets
-        pairSets = Enum.map(pairsetOffsets, fn off -> Parser.parsePairSet(table, off, record1, record2) end)
+        {coverage, pairSets} = values
         applyKerning(coverage, pairSets, glyphs, [])
       2 ->
-        #FMT 2
-        # offset to classdef, offset to classdef
-        # nClass1Records, nClass2Records
-        <<class1Off::16, class2Off::16, nClass1Records::16, nClass2Records::16, records::binary>> = rest
-
-        #read in the class definitions
-        class1 = Parser.parseGlyphClass(Parser.subtable(table, class1Off))
-        class2 = Parser.parseGlyphClass(Parser.subtable(table, class2Off))
-        # fmt==1, startglyph, nglyphs, array of ints (each int is a class)
-        # fmt==2, nRanges, {startGlyph, endGlyph, class}
-
-        #read in the actual positioning pairs
-        sizeA = Parser.valueRecordSize(record1)
-        sizeB = Parser.valueRecordSize(record2)
-        class2size = sizeA + sizeB
-        class1size = nClass2Records * class2size
-        c1recs = binary_part(records, 0, nClass1Records * class1size)
-        c1Recs = for << <<c2recs::binary-size(class1size)>> <- c1recs >>, do: c2recs
-        pairSets = Enum.map(c1Recs, fn c2recs ->
-          c2Recs = for << <<c2Rec::binary-size(class2size)>> <- c2recs>>, do: c2Rec
-          c2Recs
-          |> Enum.map(fn c2Rec -> for << <<v1::binary-size(sizeA), v2::binary-size(sizeB)>> <- c2Rec >>, do: {v1, v2} end)
-          |> Enum.map(fn [{v1, v2}] -> {Parser.readPositioningValueRecord(record1, v1), Parser.readPositioningValueRecord(record2, v2)} end)
-        end)
-
         #apply the kerning
         #classify both glyphs
         #get pairSet[c1][c2]
         #position
+        {class1, class2, pairSets} = values
         applyKerning2(class1, class2, pairSets, glyphs, [])
     end
     positioning = Enum.zip(pos, kerning) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
@@ -114,15 +77,7 @@ defmodule OpenType.Positioning do
 
   # type 3 - cursive positioning
   def applyLookupGPOS({3, flag, table, mfs}, gdef, _lookups, isRTL, {glyphs, pos, c, m}) do
-    <<_fmt::16, coverageOff::16, nAnchorPairs::16, nrecs::binary-size(nAnchorPairs)-unit(32), _::binary>> = table
-    coverage = Parser.parseCoverage(Parser.subtable(table, coverageOff))
-    records = for << <<entryAnchor::16, exitAnchor::16>> <- nrecs >>, do: {entryAnchor, exitAnchor}
-    anchorPairs = records
-                  |> Enum.map(fn {entryAnchor, exitAnchor} ->
-                    entryAnchor = if entryAnchor != 0, do: Parser.parseAnchor(Parser.subtable(table, entryAnchor)), else: nil
-                    exitAnchor = if exitAnchor != 0, do: Parser.parseAnchor(Parser.subtable(table, exitAnchor)), else: nil
-                    {entryAnchor, exitAnchor}
-                  end)
+    {coverage, anchorPairs} = parse_lookup(3, table)
 
     # filter the glyphs
     g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
@@ -142,30 +97,7 @@ defmodule OpenType.Positioning do
 
   # type 4 - mark-to-base positioning
   def applyLookupGPOS({4, flag, table, mfs}, gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
-    markArrayOffset::16, baseArrayOffset::16, _::binary>> = table
-    
-    # coverage definitions
-    markCoverage = Parser.parseCoverage(Parser.subtable(table, markCoverageOff))
-    baseCoverage = Parser.parseCoverage(Parser.subtable(table, baseCoverageOff))
-
-    # baseArray table
-    baseTbl = Parser.subtable(table, baseArrayOffset)
-    <<nRecs::16, records::binary>> = baseTbl
-    # 2 bytes per class
-    recordSize = nClasses * 2
-    records = binary_part(records, 0, nRecs * recordSize)
-    records = for << <<record::binary-size(recordSize)>> <- records >>, do: record
-    # each record is array of offsets
-    baseArray = records
-              |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
-              |> Enum.map(&Enum.map(&1, fn o -> 
-                                Parser.parseAnchor(Parser.subtable(baseTbl, o)) end) 
-                        )
-
-    # markArray table
-    markArrayTbl = Parser.subtable(table, markArrayOffset)
-    markArray = Parser.parseMarkArray(markArrayTbl)
+    {markCoverage, baseCoverage, baseArray, markArray} = parse_lookup(4, table)
 
     # filter the glyphs
     g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
@@ -191,34 +123,7 @@ defmodule OpenType.Positioning do
 
   # type 5 - mark to ligature positioning
   def applyLookupGPOS({5, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    # same as format 4, except "base" is a ligature with (possibly) multiple anchors
-    <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
-    markArrayOffset::16, baseArrayOffset::16, _::binary>> = table
-
-    _markCoverage = Parser.parseCoverage(Parser.subtable(table, markCoverageOff))
-    _baseCoverage = Parser.parseCoverage(Parser.subtable(table, baseCoverageOff))
-
-    markArrayTbl = Parser.subtable(table, markArrayOffset)
-    _markArray = Parser.parseMarkArray(markArrayTbl)
-    # base array table
-    baseTbl = Parser.subtable(table, baseArrayOffset)
-    <<nRecs::16, records::binary-size(nRecs)-unit(16), _::binary>> = baseTbl
-    # array of offsets to ligature attach tables
-    la = for << <<off::16>> <- records >>, do: Parser.subtable(baseTbl, off)
-    componentSize = nClasses * 2
-    # each component is array of offsets (size == size of mark array) to anchor tables
-    #  -- one for each mark class including class 0; may be NULL
-    _baseArray = la
-    |> Enum.map(fn laTbl ->
-      <<nComponents::16, recs::binary>> = laTbl
-      recs = binary_part(recs, 0, nComponents * componentSize)
-      comps = for << <<record::binary-size(componentSize)>> <- recs >>, do: record
-      comps
-      |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
-      |> Enum.map(&Enum.map(&1, fn o -> 
-      if o != 0, do: Parser.parseAnchor(binary_part(laTbl, o, 6)), else: nil
-      end))
-      end)
+    {_markCoverage, _baseCoverage, _baseArray, _markArray} = parse_lookup(5, table)
 
     Logger.debug "GPOS 5 - mark to ligature"
     # for this to work, we need to know which ligature component to
@@ -234,28 +139,7 @@ defmodule OpenType.Positioning do
   # type 6 - mark to mark positioning
   def applyLookupGPOS({6, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
     # same as format 4, except "base" is another mark
-    <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
-    markArrayOffset::16, baseArrayOffset::16, _::binary>> = table
-    
-    _markCoverage = Parser.parseCoverage(Parser.subtable(table, markCoverageOff))
-    _baseCoverage = Parser.parseCoverage(Parser.subtable(table, baseCoverageOff))
-    # baseArray table
-    baseTbl = Parser.subtable(table, baseArrayOffset)
-    <<nRecs::16, records::binary>> = baseTbl
-    # 2 bytes per class
-    recordSize = nClasses * 2
-    records = binary_part(records, 0, nRecs * recordSize)
-    records = for << <<record::binary-size(recordSize)>> <- records >>, do: record
-    # each record is array of offsets
-    # 6 bytes is a bit of a cheat, can be 6-10 bytes 
-    _baseArray = records
-                |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
-                |> Enum.map(&Enum.map(&1, fn o -> 
-                Parser.parseAnchor(binary_part(baseTbl, o, 6)) end) 
-              )
-
-    markArrayTbl = Parser.subtable(table, markArrayOffset)
-    _markArray = Parser.parseMarkArray(markArrayTbl)
+    {_markCoverage, _baseCoverage, _baseArray, _markArray} = parse_lookup(6, table)
 
     # adjusted = applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos, [nil])
     #Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
@@ -343,6 +227,146 @@ defmodule OpenType.Positioning do
   def applyLookupGPOS({type, _flag, _table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
     Logger.debug "Unknown GPOS lookup type #{type}"
     {glyphs, pos, c, m}
+  end
+
+
+  def parse_lookup(1, data) do
+    <<fmt::16, covOff::16, valueFormat::16, rest::binary>> = data
+    coverage = Parser.parseCoverage(Parser.subtable(data, covOff))
+    valSize = Parser.valueRecordSize(valueFormat)
+    values = case fmt do
+    1 ->
+      <<val::binary-size(valSize), _::binary>> = rest
+      Parser.readPositioningValueRecord(valueFormat, val)
+    2 ->
+      <<nVals::16, _::binary>> = rest
+      recs = binary_part(rest, 16, nVals * valSize)
+      for << <<val::binary-size(valSize)>> <- recs >>, do: Parser.readPositioningValueRecord(valueFormat, val)
+    end
+    {fmt, coverage, values}
+  end
+
+  def parse_lookup(2, data) do
+    <<fmt::16, covOff::16, record1::16, record2::16, rest::binary>> = data
+    kerning = case fmt do
+      1 ->
+        # FMT 1 - identifies individual glyphs
+        # pair set table
+        <<nPairs::16, pairOff::binary-size(nPairs)-unit(16), _::binary>> = rest
+        pairsetOffsets = for << <<x::16>> <- pairOff >>, do: x
+        # coverage table
+        coverage = Parser.parseCoverage(Parser.subtable(data, covOff))
+        # parse the pair sets
+        pairSets = Enum.map(pairsetOffsets, fn off -> Parser.parsePairSet(data, off, record1, record2) end)
+        {coverage, pairSets}
+      2 ->
+        #FMT 2
+        # offset to classdef, offset to classdef
+        # nClass1Records, nClass2Records
+        <<class1Off::16, class2Off::16, nClass1Records::16, nClass2Records::16, records::binary>> = rest
+
+        #read in the class definitions
+        class1 = Parser.parseGlyphClass(Parser.subtable(data, class1Off))
+        class2 = Parser.parseGlyphClass(Parser.subtable(data, class2Off))
+        # fmt==1, startglyph, nglyphs, array of ints (each int is a class)
+        # fmt==2, nRanges, {startGlyph, endGlyph, class}
+
+        #read in the actual positioning pairs
+        sizeA = Parser.valueRecordSize(record1)
+        sizeB = Parser.valueRecordSize(record2)
+        class2size = sizeA + sizeB
+        class1size = nClass2Records * class2size
+        c1recs = binary_part(records, 0, nClass1Records * class1size)
+        c1Recs = for << <<c2recs::binary-size(class1size)>> <- c1recs >>, do: c2recs
+        pairSets = Enum.map(c1Recs, fn c2recs ->
+          c2Recs = for << <<c2Rec::binary-size(class2size)>> <- c2recs>>, do: c2Rec
+          c2Recs
+          |> Enum.map(fn c2Rec -> for << <<v1::binary-size(sizeA), v2::binary-size(sizeB)>> <- c2Rec >>, do: {v1, v2} end)
+          |> Enum.map(fn [{v1, v2}] -> {Parser.readPositioningValueRecord(record1, v1), Parser.readPositioningValueRecord(record2, v2)} end)
+        end)
+
+        {class1, class2, pairSets}
+    end
+    {fmt, kerning}
+  end
+
+  def parse_lookup(3, data) do
+    <<_fmt::16, coverageOff::16, nAnchorPairs::16, nrecs::binary-size(nAnchorPairs)-unit(32), _::binary>> = data
+    coverage = Parser.parseCoverage(Parser.subtable(data, coverageOff))
+    records = for << <<entryAnchor::16, exitAnchor::16>> <- nrecs >>, do: {entryAnchor, exitAnchor}
+    anchorPairs = records
+                  |> Enum.map(fn {entryAnchor, exitAnchor} ->
+                    entryAnchor = if entryAnchor != 0, do: Parser.parseAnchor(Parser.subtable(data, entryAnchor)), else: nil
+                    exitAnchor = if exitAnchor != 0, do: Parser.parseAnchor(Parser.subtable(data, exitAnchor)), else: nil
+                    {entryAnchor, exitAnchor}
+                  end)
+    {coverage, anchorPairs}
+  end
+
+  def parse_lookup(4, data) do
+    <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
+    markArrayOffset::16, baseArrayOffset::16, _::binary>> = data
+    
+    # coverage definitions
+    markCoverage = Parser.parseCoverage(Parser.subtable(data, markCoverageOff))
+    baseCoverage = Parser.parseCoverage(Parser.subtable(data, baseCoverageOff))
+
+    # baseArray table
+    baseTbl = Parser.subtable(data, baseArrayOffset)
+    <<nRecs::16, records::binary>> = baseTbl
+    # 2 bytes per class
+    recordSize = nClasses * 2
+    records = binary_part(records, 0, nRecs * recordSize)
+    records = for << <<record::binary-size(recordSize)>> <- records >>, do: record
+    # each record is array of offsets
+    baseArray = records
+              |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
+              |> Enum.map(&Enum.map(&1, fn o -> 
+                                Parser.parseAnchor(Parser.subtable(baseTbl, o)) end) 
+                        )
+
+    # markArray table
+    markArrayTbl = Parser.subtable(data, markArrayOffset)
+    markArray = Parser.parseMarkArray(markArrayTbl)
+
+    {markCoverage, baseCoverage, baseArray, markArray}
+  end
+
+  def parse_lookup(5, data) do
+    # same as format 4, except "base" is a ligature with (possibly) multiple anchors
+    <<_fmt::16, markCoverageOff::16, baseCoverageOff::16, nClasses::16, 
+    markArrayOffset::16, baseArrayOffset::16, _::binary>> = data
+
+    markCoverage = Parser.parseCoverage(Parser.subtable(data, markCoverageOff))
+    baseCoverage = Parser.parseCoverage(Parser.subtable(data, baseCoverageOff))
+
+    markArrayTbl = Parser.subtable(data, markArrayOffset)
+    markArray = Parser.parseMarkArray(markArrayTbl)
+    # base array table
+    baseTbl = Parser.subtable(data, baseArrayOffset)
+    <<nRecs::16, records::binary-size(nRecs)-unit(16), _::binary>> = baseTbl
+    # array of offsets to ligature attach tables
+    la = for << <<off::16>> <- records >>, do: Parser.subtable(baseTbl, off)
+    componentSize = nClasses * 2
+    # each component is array of offsets (size == size of mark array) to anchor tables
+    #  -- one for each mark class including class 0; may be NULL
+    baseArray = la
+    |> Enum.map(fn laTbl ->
+      <<nComponents::16, recs::binary>> = laTbl
+      recs = binary_part(recs, 0, nComponents * componentSize)
+      comps = for << <<record::binary-size(componentSize)>> <- recs >>, do: record
+      comps
+      |> Enum.map(fn r -> for << <<offset::16>> <- r>>, do: offset end)
+      |> Enum.map(&Enum.map(&1, fn o -> 
+      if o != 0, do: Parser.parseAnchor(binary_part(laTbl, o, 6)), else: nil
+      end))
+      end)
+    {markCoverage, baseCoverage, baseArray, markArray}
+  end
+
+  def parse_lookup(6, data) do
+    # same format at GPOS 4
+    parse_lookup(4, data)
   end
 
   defp applyMarkToBase(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, _prev, [], pos, deltas), do: {pos, deltas}
