@@ -31,26 +31,17 @@ defmodule OpenType.Substitutions do
     end
   end
 
-  @doc """
-  Parse and apply a lookup table
-
-  This is called when applying a substitution (for example, when
-  a chained context rule chains to another lookup) because we
-  can't assume the lookup has been parsed be default.
-
-  It should not really be called by an external module directly.
-  """
-  def parse_and_apply({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga}) do
+  defp parse_and_apply({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga}) do
     apply_substitution({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga})
   end
 
-  def parse_and_apply({7, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
+  defp parse_and_apply({7, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
     {actual_type, output} = parse_lookup(7, offsets, data)
     val = {:parsed, actual_type, flag, mfs, output}
     apply_substitution(val, gdef, lookups, tag, {glyphs, pga})
   end
 
-  def parse_and_apply({type, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
+  defp parse_and_apply({type, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
     val = {:parsed, type, flag, mfs, parse_lookup(type, offsets, data)}
     apply_substitution(val, gdef, lookups, tag, {glyphs, pga})
   end
