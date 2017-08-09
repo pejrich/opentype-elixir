@@ -221,12 +221,18 @@ defmodule OpenType do
                |> Enum.sort
                |> Enum.uniq
 
+
+    #TODO: we know which lookups are going to be used
+    # we can parse now, update subL, apply below!
+    lookup_cache = Enum.reduce(indices, lookups, fn(x, cache) -> Positioning.parse_lookup_table(x, cache) end)
+
     isRTL = UnicodeData.right_to_left?(script)
     # apply the lookups
     # returns glyphs, positioning, cursive attachments, mark attachments
     cursiveDeltas = List.duplicate(0, length(glyphs))
     markDeltas = List.duplicate(0, length(glyphs))
-    {g, p, cDeltas, mDeltas} = Enum.reduce(indices, {glyphs, positions, cursiveDeltas, markDeltas}, fn (x, acc) -> Positioning.applyLookupGPOS(Enum.at(lookups, x), ttf.definitions, lookups, isRTL, acc) end)
+    {g, p, cDeltas, mDeltas} = Enum.reduce(indices, {glyphs, positions, cursiveDeltas, markDeltas}, 
+                                           fn (x, acc) -> Positioning.apply_lookup(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, isRTL, acc) end)
     # make cursive and mark positioning adjustments
     # first apply any cursive adjustments
     {p, _deltas} = Positioning.adjustCursiveOffset(p, cDeltas)

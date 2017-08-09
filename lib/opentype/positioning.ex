@@ -19,26 +19,49 @@ defmodule OpenType.Positioning do
     # simply passes through the input
   # ==============================================
 
-  # type 9 - when 32-bit offsets are used for subtables
-  def applyLookupGPOS({9, flag, offsets, table, mfs}, gdef, lookups, isRTL, {glyphs, pos, c, m}) do
-    subtables = offsets
-            |> Enum.map(fn x ->
-            <<1::16, actual_type::16, off::32>> = binary_part(table, x, 8)
-            {actual_type, Parser.subtable(table, x + off)}
-              end)
-    #for each subtable
-    Enum.reduce(subtables, {glyphs, pos, c, m}, fn ({type, tbl}, input) -> applyLookupGPOS({type, flag, tbl, mfs}, gdef, lookups, isRTL, input) end)
+  # parse a lookup table
+  def parse_lookup_table(index, lookups) do
+    lookup = lookups |> Enum.at(index)
+    parsed = case lookup do
+      # extended lookup table, need to return actual lookup type
+      {9, flag, offsets, table, mfs} -> 
+        {actual_type, output} = parse_lookup(9, offsets, table)
+        {:parsed, actual_type, flag, mfs, output}
+      # standard lookup table
+      {n, flag, offsets, table, mfs} -> {:parsed, n, flag, mfs, parse_lookup(n, offsets, table)}
+      # already parsed (or unparsable), ignore
+      _ -> lookup
+    end
+
+    # replace with parsed content and return
+    if parsed != lookup do
+      lookups |> List.replace_at(index, parsed)
+    else
+      lookups
+    end
   end
 
-  # all other types
-  def applyLookupGPOS({type, flag, offsets, table, mfs}, gdef, lookups, isRTL, {glyphs, pos, c, m}) do
-    #for each subtable
-    Enum.reduce(offsets, {glyphs, pos, c, m}, fn (offset, input) -> applyLookupGPOS({type, flag, Parser.subtable(table, offset), mfs}, gdef, lookups, isRTL, input) end)
+  defp parse_and_apply({:parsed, type, flag, mfs, data}, gdef, lookups, isRTL, input) do
+    apply_lookup({:parsed, type, flag, mfs, data}, gdef, lookups, isRTL, input)
   end
 
-  #type 1 - single positioning
-  def applyLookupGPOS({1, _flag, table, _mfs}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
-    {fmt, coverage, values} = parse_lookup(1, table)
+  defp parse_and_apply({9, flag, offsets, data, mfs}, gdef, lookups, isRTL, input) do
+    {actual_type, output} = parse_lookup(9, offsets, data)
+    val = {:parsed, actual_type, flag, mfs, output}
+    apply_lookup(val, gdef, lookups, isRTL, input)
+  end
+
+  defp parse_and_apply({type, flag, offsets, data, mfs}, gdef, lookups, isRTL, input) do
+    val = {:parsed, type, flag, mfs, parse_lookup(type, offsets, data)}
+    apply_lookup(val, gdef, lookups, isRTL, input)
+  end
+
+  def apply_lookup({:parsed, type, flag, mfs, data}, gdef, lookups, isRTL, {glyphs, pos, c, m}) when is_list(data) do
+    Enum.reduce(data, {glyphs, pos, c, m}, fn (subdata, input) -> apply_lookup({:parsed, type, flag, mfs, subdata}, gdef, lookups, isRTL, input) end)
+  end
+
+  def apply_lookup({:parsed, 1, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+    {fmt, coverage, values} = data
 
     adjusted = case fmt do
     1 ->
@@ -56,9 +79,8 @@ defmodule OpenType.Positioning do
     {glyphs, positioning, c, m}
   end
 
-  # type 2 - pair positioning (ie, kerning)
-  def applyLookupGPOS({2, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    {fmt, values} = parse_lookup(2, table)
+  def apply_lookup({:parsed, 2, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+    {fmt, values} = data
     kerning = case fmt do
       1 ->
         {coverage, pairSets} = values
@@ -75,9 +97,8 @@ defmodule OpenType.Positioning do
     {glyphs, positioning, c, m}
   end
 
-  # type 3 - cursive positioning
-  def applyLookupGPOS({3, flag, table, mfs}, gdef, _lookups, isRTL, {glyphs, pos, c, m}) do
-    {coverage, anchorPairs} = parse_lookup(3, table)
+  def apply_lookup({:parsed, 3, flag, mfs, data}, gdef, _lookups, isRTL, {glyphs, pos, c, m}) do
+    {coverage, anchorPairs} = data
 
     # filter the glyphs
     g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
@@ -94,10 +115,8 @@ defmodule OpenType.Positioning do
           |> Enum.map(fn {v, i} -> if v != 0, do: v, else: Enum.at(d, i) end)
     {glyphs, p, cdeltas, m}
   end
-
-  # type 4 - mark-to-base positioning
-  def applyLookupGPOS({4, flag, table, mfs}, gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    {markCoverage, baseCoverage, baseArray, markArray} = parse_lookup(4, table)
+  def apply_lookup({:parsed, 4, flag, mfs, data}, gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+    {markCoverage, baseCoverage, baseArray, markArray} = data
 
     # filter the glyphs
     g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
@@ -120,10 +139,8 @@ defmodule OpenType.Positioning do
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
     {glyphs, adjusted, c, mdeltas}
   end
-
-  # type 5 - mark to ligature positioning
-  def applyLookupGPOS({5, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    {_markCoverage, _baseCoverage, _baseArray, _markArray} = parse_lookup(5, table)
+  def apply_lookup({:parsed, 5, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+    {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
     Logger.debug "GPOS 5 - mark to ligature"
     # for this to work, we need to know which ligature component to
@@ -135,11 +152,9 @@ defmodule OpenType.Positioning do
     # mark that is itself a ligature!
     {glyphs, pos, c, m}
   end
-
-  # type 6 - mark to mark positioning
-  def applyLookupGPOS({6, _flag, table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 6, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
     # same as format 4, except "base" is another mark
-    {_markCoverage, _baseCoverage, _baseArray, _markArray} = parse_lookup(6, table)
+    {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
     # adjusted = applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos, [nil])
     #Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
@@ -147,33 +162,14 @@ defmodule OpenType.Positioning do
     # {glyphs, positioning, c, m}
     {glyphs, pos, c, m}
   end
-
-  # type 7 - contextual positioning
-  def applyLookupGPOS({7, _flag, table, _mfs}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
-    <<format::16, details::binary>> = table
+  def apply_lookup({:parsed, 7, _flag, _mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
+    {format, val} = data
     pos = case format do
       1 ->
         Logger.debug "GPOS 7.1 - contextual positioning"
         pos
       2 ->
-        <<covOff::16, 
-          classDefOff::16,
-          nRulesets::16, 
-          srsOff::binary-size(nRulesets)-unit(16),
-          _::binary>> = details
-        coverage = Parser.parseCoverage(Parser.subtable(table, covOff))
-        classes = Parser.parseGlyphClass(Parser.subtable(table, classDefOff))
-        srs = for << <<offset::16>> <- srsOff >>, do: if offset != 0, do: Parser.subtable(table, offset), else: nil
-        rulesets =  srs
-                    |> Enum.map(fn ruleset ->
-                      if ruleset != nil do
-                        <<nRules::16, srOff::binary-size(nRules)-unit(16), _::binary>> = ruleset
-                        rules = for << <<offset::16>> <- srOff >>, do: Parser.subtable(ruleset, offset)
-                        rules |> Enum.map(&Parser.parseContextSubRule1(&1))
-                      else
-                        nil
-                      end
-                    end)
+        {coverage, rulesets, classes} = val
         _positioning = applyContextPos2(coverage, rulesets, classes, gdef, lookups, glyphs, pos, [])
         pos
       3 ->
@@ -185,10 +181,8 @@ defmodule OpenType.Positioning do
     end
     {glyphs, pos, c, m}
   end
-
-  # type 8 - chained contextual positioning
-  def applyLookupGPOS({8, flag, table, mfs}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
-    <<format::16, details::binary>> = table
+  def apply_lookup({:parsed, 8, flag, mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
+    {format, val} = data
     pos = case format do
       1 ->
         Logger.debug "GPOS 8.1 - chained contextual positioning"
@@ -197,22 +191,7 @@ defmodule OpenType.Positioning do
         Logger.debug "GPOS 8.2 - chained contextual positioning"
         pos
       3 ->
-        <<backtrackCount::16, backoff::binary-size(backtrackCount)-unit(16),
-          inputCount::16, inputOff::binary-size(inputCount)-unit(16),
-          lookaheadCount::16, lookaheadOff::binary-size(lookaheadCount)-unit(16),
-          substCount::16, substRecs::binary-size(substCount)-unit(32),
-          _::binary>> = details
-        
-        # parse the coverage tables and positioning records  
-        backOffsets = for << <<x::16>> <- backoff >>, do: x
-        btCoverage = Enum.map(backOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(table, covOff)) end)
-        inputOffsets = for << <<x::16>> <- inputOff >>, do: x
-        coverage = Enum.map(inputOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(table, covOff)) end)
-        lookaheadOffsets = for << <<x::16>> <- lookaheadOff >>, do: x
-        laCoverage = Enum.map(lookaheadOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(table, covOff)) end)
-
-        # index x at which to apply lookup y
-        posRecords = for << <<x::16, y::16>> <- substRecs >>, do: {x, y}
+        {btCoverage, coverage, laCoverage, posRecords} = val
 
         g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
         applyChainingContextPos3(btCoverage, coverage, laCoverage, posRecords, gdef, lookups, g, pos, [])
@@ -223,10 +202,24 @@ defmodule OpenType.Positioning do
     {glyphs, pos, c, m}
   end
 
-  #unhandled type; log and leave input untouched
-  def applyLookupGPOS({type, _flag, _table, _mfs}, _gdef,_lookups, _isRTL, {glyphs, pos, c, m}) do
-    Logger.debug "Unknown GPOS lookup type #{type}"
-    {glyphs, pos, c, m}
+  def parse_lookup(9, offsets, data) do
+    # GPOS type 9 -- extended table
+    subtables = offsets
+            |> Enum.map(fn x ->
+            <<1::16, lt::16, off::32>> = binary_part(data, x, 8)
+            {lt, Parser.subtable(data, x + off)}
+              end)
+    # spec says extended type is identical for all subtables
+    {actual_type, _} = hd(subtables)
+    output = subtables
+             |> Enum.map(fn {type, table} -> parse_lookup(type, table) end)
+    {actual_type, output}
+  end
+
+  # parse a lookup (which is expected to have multiple subtables)
+  def parse_lookup(type, offsets, data) do
+    offsets
+    |> Enum.map(fn o -> parse_lookup(type, Parser.subtable(data, o)) end)
   end
 
 
@@ -367,6 +360,77 @@ defmodule OpenType.Positioning do
   def parse_lookup(6, data) do
     # same format at GPOS 4
     parse_lookup(4, data)
+  end
+
+  def parse_lookup(7, data) do
+    <<format::16, details::binary>> = data
+    val = case format do
+      1 ->
+        Logger.debug "GPOS 7.1 - contextual positioning"
+        nil
+      2 ->
+        <<covOff::16, 
+          classDefOff::16,
+          nRulesets::16, 
+          srsOff::binary-size(nRulesets)-unit(16),
+          _::binary>> = details
+        coverage = Parser.parseCoverage(Parser.subtable(data, covOff))
+        classes = Parser.parseGlyphClass(Parser.subtable(data, classDefOff))
+        srs = for << <<offset::16>> <- srsOff >>, do: if offset != 0, do: Parser.subtable(data, offset), else: nil
+        rulesets =  srs
+                    |> Enum.map(fn ruleset ->
+                      if ruleset != nil do
+                        <<nRules::16, srOff::binary-size(nRules)-unit(16), _::binary>> = ruleset
+                        rules = for << <<offset::16>> <- srOff >>, do: Parser.subtable(ruleset, offset)
+                        rules |> Enum.map(&Parser.parseContextSubRule1(&1))
+                      else
+                        nil
+                      end
+                    end)
+        {coverage, rulesets, classes}
+      3 ->
+        Logger.debug "GPOS 7.3 - contextual positioning"
+        nil
+      _ ->
+        Logger.debug "GPOS 7 - contextual positioning format #{format}"
+        nil
+    end
+    {format, val}
+  end
+
+  def parse_lookup(8, data) do
+    <<format::16, details::binary>> = data
+    val = case format do
+      1 ->
+        Logger.debug "GPOS 8.1 - chained contextual positioning"
+        nil
+      2 ->
+        Logger.debug "GPOS 8.2 - chained contextual positioning"
+        nil
+      3 ->
+        <<backtrackCount::16, backoff::binary-size(backtrackCount)-unit(16),
+          inputCount::16, inputOff::binary-size(inputCount)-unit(16),
+          lookaheadCount::16, lookaheadOff::binary-size(lookaheadCount)-unit(16),
+          substCount::16, substRecs::binary-size(substCount)-unit(32),
+          _::binary>> = details
+        
+        # parse the coverage tables and positioning records  
+        backOffsets = for << <<x::16>> <- backoff >>, do: x
+        btCoverage = Enum.map(backOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(data, covOff)) end)
+        inputOffsets = for << <<x::16>> <- inputOff >>, do: x
+        coverage = Enum.map(inputOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(data, covOff)) end)
+        lookaheadOffsets = for << <<x::16>> <- lookaheadOff >>, do: x
+        laCoverage = Enum.map(lookaheadOffsets, fn covOff -> Parser.parseCoverage(Parser.subtable(data, covOff)) end)
+
+        # index x at which to apply lookup y
+        posRecords = for << <<x::16, y::16>> <- substRecs >>, do: {x, y}
+
+        {btCoverage, coverage, laCoverage, posRecords}
+      _ ->
+        Logger.debug "GPOS 8 - chained contextual positioning format #{format}"
+        nil
+    end
+    {format, val}
   end
 
   defp applyMarkToBase(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, _prev, [], pos, deltas), do: {pos, deltas}
@@ -573,8 +637,7 @@ defmodule OpenType.Positioning do
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           {candidate, candidate_position} = Enum.at(acc, inputLoc)
           lookup = Enum.at(lookups, lookupIndex)
-          # applyLookupGPOS({type, _flag, _table}, _gdef,_lookups, _isRTL, {glyphs, pos}) do
-          [adjusted_pos | _] = applyLookupGPOS(lookup, gdef, lookups, nil, {[candidate], [candidate_position]})
+          {_, [adjusted_pos | _], _, _} = parse_and_apply(lookup, gdef, lookups, nil, {[candidate], [candidate_position], [], []})
           List.replace_at(acc, inputLoc, {candidate, adjusted_pos})
         end)
         # skip over any matched glyphs
@@ -641,7 +704,7 @@ defmodule OpenType.Positioning do
           {g, index} = Enum.at(input, inputIndex)
           candidate_position = Enum.at(accPos, index)
           # we only care about the new pos
-          {_, [adjusted_pos | _], _, _} = applyLookupGPOS(lookup, gdef, lookups, nil, {[g], [candidate_position], [], []})
+          {_, [adjusted_pos | _], _, _} = parse_and_apply(lookup, gdef, lookups, nil, {[g], [candidate_position], [], []})
           List.replace_at(accPos, index, adjusted_pos)
         end)
       else
