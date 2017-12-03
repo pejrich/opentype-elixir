@@ -1,13 +1,13 @@
 defmodule Opentype.Mixfile do
   use Mix.Project
 
-  @version "0.4.0"
+  @version "0.5.0"
 
   def project do
     [app: :opentype,
      name: "OpenType",
      version: @version,
-     elixir: "~> 1.4",
+     elixir: "~> 1.5",
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      test_coverage: [tool: ExCoveralls],
@@ -36,9 +36,9 @@ defmodule Opentype.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:unicode_data, "~> 0.5.0"},
-      {:excoveralls, "~> 0.7.1", only: :test},
-      {:ex_doc, "~> 0.16.0", only: :dev }
+      {:unicode_data, "~> 0.6.0"},
+      {:excoveralls, "~> 0.7.5", only: :test},
+      {:ex_doc, "~> 0.18.1", only: :dev }
     ]
   end
 
