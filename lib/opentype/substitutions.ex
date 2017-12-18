@@ -117,6 +117,7 @@ defmodule OpenType.Substitutions do
     end
 
     #TODO: figure out per-glyph-annotation for ligature!
+    #TODO: also need to track components through to positioning for GPOS5
     {applyLigature(coverage, ligaOff, glyphs, []), pga}
   end
 
