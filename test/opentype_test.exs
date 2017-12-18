@@ -93,4 +93,11 @@ defmodule OpenTypeTest do
     assert glyphs ==  [230, 591, 591, 591, 591, 591, 18, 523]
   end
 
+  test "Exercise GSUB 8 (reverse contextual chaining)" do
+    ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
+
+    {glyphs, _pos} = OpenType.layout_text(ttf, "\u0630\u0698 \u0621\u0647")
+    assert glyphs ==  [304, 248, 7, 277, 269]
+  end
+
 end

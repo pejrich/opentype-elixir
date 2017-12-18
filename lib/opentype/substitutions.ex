@@ -145,15 +145,15 @@ defmodule OpenType.Substitutions do
 
   #GSUB type 6 -- chained contextual substitution
   def apply_substitution({:parsed, 6, flag, mfs, sub}, gdef, lookups, tag, {glyphs, pga}) do
-    if tag != nil do
-      IO.puts "GSUB 6 per-glyph #{tag} lookup"
-    end
     {format, rules} = sub
     output = case format do
       1 ->
         Logger.debug "GSUB 6.1 - chained substitution"
         glyphs
       2 ->
+        if tag != nil do
+          IO.puts "GSUB 6 per-glyph #{tag} lookup; type #{format}"
+        end
         {coverage, rulesets, btClasses, inputClasses, laClasses} = rules
         #{f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
         applyChainingContextSub2(coverage, rulesets, {btClasses, inputClasses, laClasses}, lookups, glyphs, [])
@@ -161,7 +161,7 @@ defmodule OpenType.Substitutions do
       3 ->
         {btCoverage, coverage, laCoverage, substRecords} = rules
         {f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
-        replaced = applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, f, [])
+        replaced = applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, f, {tag, pga}, [])
         unfilter_glyphs(replaced, skipped)
       _ ->
         Logger.debug "GSUB 6 - chaining substitution format #{format}"
@@ -181,6 +181,7 @@ defmodule OpenType.Substitutions do
     if tag != nil do
       IO.puts "GSUB 8 per-glyph #{tag} lookup"
     end
+    #Logger.debug "GSUB 8 - reverse chaining substitution"
     Logger.debug "GSUB 8 - reverse chaining substitution"
     {btCoverage, coverage, laCoverage, substRecords} = sub
     {f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
@@ -582,7 +583,7 @@ defmodule OpenType.Substitutions do
     end
   end
 
-  # handle coverage-based format for context chaining
+  # handle reverse context chaining (add to output head instead of tail)
   defp applyReverseChainingContext(_btCoverage, _coverage, _laCoverage, _subst, _, [], output), do: output
   defp applyReverseChainingContext(btCoverage, coverage, laCoverage, subst, lookups, glyphs, output) do
     backtrack = length(btCoverage)
@@ -615,7 +616,7 @@ defmodule OpenType.Substitutions do
         true
       end
 
-      #do we match lookahead
+      #do we match lookahead?
       laMatches = if lookahead > 0 do
         output
         |> Enum.take(lookahead)
@@ -635,60 +636,63 @@ defmodule OpenType.Substitutions do
   end
 
   # handle coverage-based format for context chaining
-  defp applyChainingContextSub3(_btCoverage, _coverage, _laCoverage, _subst, _, [], output), do: output
-  defp applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, [g | glyphs], output) do
+  defp applyChainingContextSub3(_btCoverage, _coverage, _laCoverage, _subst, _, [], _pga, output), do: output
+  defp applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, [g | glyphs], {tag, pga}, output) do
     backtrack = length(btCoverage)
     inputExtra = length(coverage) - 1
     lookahead = length(laCoverage)
-    #not enough backtracking or lookahead to even attempt match
-    oo = if length(output) < backtrack or length(glyphs) < lookahead + inputExtra do
-      [g]
-    else
-
-      #do we match the input
-      input = [g] ++ Enum.take(glyphs, inputExtra)
-      inputMatches = input
-                     |> Enum.zip(coverage)
-                     |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
-
-      #do we match backtracking?
-      backMatches = if backtrack > 0 do
-        output
-        |> Enum.reverse
-        |> Enum.take(backtrack)
-        |> Enum.zip(btCoverage)
-        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
-      else
-        true
-      end
-
-      #do we match lookahead
-      laMatches = if lookahead > 0 do
-        glyphs
-        |> Enum.drop(inputExtra)
-        |> Enum.take(lookahead)
-        |> Enum.zip(laCoverage)
-        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
-      else
-        true
-      end
-
-      if inputMatches and backMatches and laMatches do
-        replaced = substRecords
-        |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
-          candidate = Enum.at(acc, inputLoc)
-          lookup = Enum.at(lookups, lookupIndex)
-          {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
-          List.replace_at(acc, inputLoc, replacement)
-        end)
-        replaced
-      else
+    oo = cond do
+      #not enough backtracking or lookahead to even attempt match
+      length(output) < backtrack or length(glyphs) < lookahead + inputExtra ->
         [g]
-      end
+      # filter to only process when tag applies for current glyph
+      tag != nil and hd(pga) != tag ->
+        [g]
+      true ->
+        #do we match the input
+        input = [g] ++ Enum.take(glyphs, inputExtra)
+        inputMatches = input
+                       |> Enum.zip(coverage)
+                       |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
 
+        #do we match backtracking?
+        backMatches = if backtrack > 0 do
+          output
+          |> Enum.reverse
+          |> Enum.take(backtrack)
+          |> Enum.zip(btCoverage)
+          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+        else
+          true
+        end
+
+        #do we match lookahead
+        laMatches = if lookahead > 0 do
+          glyphs
+          |> Enum.drop(inputExtra)
+          |> Enum.take(lookahead)
+          |> Enum.zip(laCoverage)
+          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+        else
+          true
+        end
+
+        if inputMatches and backMatches and laMatches do
+          replaced = substRecords
+                     |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
+                       candidate = Enum.at(acc, inputLoc)
+                       lookup = Enum.at(lookups, lookupIndex)
+                       {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+                       List.replace_at(acc, inputLoc, replacement)
+                     end)
+          replaced
+        else
+          [g]
+        end
     end
     output = output ++ oo
-    applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, glyphs, output)
+    pga = if length(pga) > 0, do: tl(pga), else: pga
+    applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, glyphs, {tag, pga}, output)
   end
 
   # given a glyph, find out the coverage index (can be nil)
