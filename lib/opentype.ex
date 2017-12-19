@@ -120,12 +120,19 @@ defmodule OpenType do
     features = if "kern" in features, do: ["palt" | features], else: features
 
     # mark any per-glyph features
-    # TODO: shaper should work with glyphs rather than script
-    per_glyph_features = Layout.shape_glyphs(script, glyphs)
+    {per_glyph_features, assignments} = Layout.shape_glyphs(script, glyphs)
+
+    glyphs = if length(assignments) > 0 do
+      glyphs
+      |> Enum.with_index
+      |> Enum.map(fn {g, i} -> %{g | tag: Enum.at(assignments, i)} end)
+    else
+      glyphs
+    end
 
     # do the subs
     output = glyphs
-             |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
+             |> handle_substitutions(ttf, script, lang, features, {per_glyph_features, assignments})
 
     {output, pos} = output
                     |> position_glyphs(ttf, script, lang, features)

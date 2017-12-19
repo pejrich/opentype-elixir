@@ -60,9 +60,7 @@ defmodule OpenType.Substitutions do
     replace = fn g -> applySingleSub(g, coverage, replacements) end
     output = if tag != nil do
       glyphs
-      |> Enum.with_index
-      |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
-      |> Enum.map(fn {g, assignment} -> if assignment == tag, do: replace.(g), else: g end)
+      |> Enum.map(fn g -> if g.tag == tag, do: replace.(g), else: g end)
     else
       Enum.map(glyphs, replace)
     end
@@ -74,9 +72,7 @@ defmodule OpenType.Substitutions do
     {coverage, sequences} = sub
     output = if tag != nil do
       glyphs
-      |> Enum.with_index
-      |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
-      |> Enum.map(fn {g, assignment} -> if assignment == tag, do: applyMultiSub(g, coverage, sequences), else: g end)
+      |> Enum.map(fn g -> if g.tag == tag, do: applyMultiSub(g, coverage, sequences), else: g end)
     else
       glyphs
       |> Enum.map(fn g -> applyMultiSub(g, coverage, sequences) end)
@@ -97,15 +93,13 @@ defmodule OpenType.Substitutions do
   end
 
   # GSUB type 3 -- alternate substitution (one-for-one)
-  def apply_substitution({:parsed, 3, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 3, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, _pga}) do
     {coverage, alts} = sub
     # TODO: seems like there's a way in unicode to specify alt??
     # More research required, for now substitute a random alt
     if tag != nil do
       glyphs
-      |> Enum.with_index
-      |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
-      |> Enum.map(fn {g, assignment} -> if assignment == tag, do: applyRandomAlt(g, coverage, alts), else: g end)
+      |> Enum.map(fn g -> if g.tag == tag, do: applyRandomAlt(g, coverage, alts), else: g end)
     end
     Enum.map(glyphs, fn g -> applyRandomAlt(g, coverage, alts) end)
   end
@@ -396,7 +390,7 @@ defmodule OpenType.Substitutions do
       replacements = Enum.at(seq, coverloc)
       newG = %{g | glyph: hd(replacements)}
       e = tl(replacements)
-          |> Enum.map(fn x -> %GlyphInfo{glyph: x} end)
+          |> Enum.map(fn x -> %GlyphInfo{glyph: x, tag: g.tag} end)
       [newG | e]
     else
       g
@@ -656,7 +650,7 @@ defmodule OpenType.Substitutions do
       length(output) < backtrack or length(glyphs) < lookahead + inputExtra ->
         [g]
       # filter to only process when tag applies for current glyph
-      tag != nil and hd(pga) != tag ->
+      tag != nil and g.tag != tag ->
         [g]
       true ->
         #do we match the input
