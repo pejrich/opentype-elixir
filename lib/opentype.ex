@@ -7,6 +7,7 @@ defmodule OpenType do
   alias OpenType.Substitutions
   alias OpenType.Positioning
   alias OpenType.Layout
+  alias OpenType.GlyphInfo
 
   @doc """
   Create an empty structure with sensible defaults.
@@ -95,7 +96,7 @@ defmodule OpenType do
     # into a series of glyphs
     glyphs = text
     |> String.to_charlist
-    |> Enum.map(fn(cid) -> Map.get(ttf.cid2gid, cid, 0) end)
+    |> Enum.map(fn(cid) -> %GlyphInfo{glyph: Map.get(ttf.cid2gid, cid, 0), codepoints: [cid]} end)
 
     # detect script if not passed in
     script = if script == nil do
@@ -124,9 +125,11 @@ defmodule OpenType do
 
     # do the subs
     output = glyphs
+             |> Enum.map(fn g -> g.glyph end)
              |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
 
     {output, pos} = output
+                    #|> Enum.map(fn g -> g.glyph end)
                     |> position_glyphs(ttf, script, lang, features)
 
     {output, pos}
