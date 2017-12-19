@@ -128,7 +128,7 @@ defmodule OpenType do
              |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
 
     {output, pos} = output
-                    #|> Enum.map(fn g -> g.glyph end)
+                    |> Enum.map(fn g -> g.glyph end)
                     |> position_glyphs(ttf, script, lang, features)
 
     {output, pos}
@@ -186,7 +186,7 @@ defmodule OpenType do
     g2 = glyphs |> Enum.map(fn g -> g.glyph end)
     # apply the lookups and return the resulting {glyphs, pga}
     # (pga length changes when glyphs length changes)
-    {g, _pga} = Enum.reduce(lookups, {g2, per_glyph_assignments}, fn (x, acc) ->
+    {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
                 if pgl != nil and Map.has_key?(pgl, x) do
                   Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, Map.get(pgl, x), acc)
                 else

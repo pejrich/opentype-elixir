@@ -1,5 +1,6 @@
 defmodule OpenType.Substitutions do
   alias OpenType.Parser
+  alias OpenType.GlyphInfo
   require Logger
 
   # ==============================================
@@ -381,18 +382,22 @@ defmodule OpenType.Substitutions do
 
   defp applySingleSub(g, _coverage, nil), do: g
   defp applySingleSub(g, coverage, delta) when is_integer(delta) do
-    coverloc = findCoverageIndex(coverage, g)
-    if coverloc != nil, do: g + delta, else: g
+    coverloc = findCoverageIndex(coverage, g.glyph)
+    if coverloc != nil, do: %{g | glyph: g.glyph + delta}, else: g
   end
   defp applySingleSub(g, coverage, replacements) do
-    coverloc = findCoverageIndex(coverage, g)
-    if coverloc != nil, do: Enum.at(replacements, coverloc), else: g
+    coverloc = findCoverageIndex(coverage, g.glyph)
+    if coverloc != nil, do: %{g | glyph: Enum.at(replacements, coverloc)}, else: g
   end
 
   defp applyMultiSub(g, coverage, seq) do
-    coverloc = findCoverageIndex(coverage, g)
+    coverloc = findCoverageIndex(coverage, g.glyph)
     if coverloc != nil do
-      Enum.at(seq, coverloc)
+      replacements = Enum.at(seq, coverloc)
+      newG = %{g | glyph: hd(replacements)}
+      e = tl(replacements)
+          |> Enum.map(fn x -> %GlyphInfo{glyph: x} end)
+      [newG | e]
     else
       g
     end
@@ -400,10 +405,10 @@ defmodule OpenType.Substitutions do
 
 
   defp applyRandomAlt(g, coverage, alts) do
-    coverloc = findCoverageIndex(coverage, g)
+    coverloc = findCoverageIndex(coverage, g.glyph)
     if coverloc != nil do
       candidates = Enum.at(alts, coverloc)
-      Enum.random(candidates)
+      %{g | glyph: Enum.random(candidates)}
     else
       g
     end
@@ -411,20 +416,22 @@ defmodule OpenType.Substitutions do
   defp applyLigature(_coverage, _ligatures, [], output), do: output
   defp applyLigature(coverage, ligatures, [g | glyphs], output) do
     # get the index of a ligature set that might apply
-    coverloc = findCoverageIndex(coverage, g)
+    coverloc = findCoverageIndex(coverage, g.glyph)
     {output, glyphs} = if coverloc != nil do
       # find first match in this ligature set (if any)
       # TODO: flag might mean we need to filter ignored categories
       # ie; skip marks
-      lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> Enum.take(glyphs, length(match)) == match end)
+      lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> glyphs |> Enum.take(length(match)) |> Enum.map(fn x -> x.glyph end) == match end)
       if lig != nil do
         # replace the current glyph
         {rep, m} = lig
+        matched = [g | glyphs] |> Enum.take(length(m)+1) |> Enum.map(fn x -> x.codepoints end) |> Enum.concat
+        replacement = %{g | glyph: rep, codepoints: matched, isLigature: true}
         # skip over any matched glyphs
         # TODO: handle flags correctly
         # probably want to prepend earlier ignored glyphs to remaining
         remaining = Enum.slice(glyphs, length(m), length(glyphs))
-        {output ++ [rep], remaining}
+        {output ++ [replacement], remaining}
       else
         {output ++ [g], glyphs}
       end
@@ -436,27 +443,29 @@ defmodule OpenType.Substitutions do
 
   defp applyContextSub1(_coverage, _rulesets, _lookups, [], output), do: output
   defp applyContextSub1(coverage, rulesets, lookups, [g | glyphs], output) do
-    coverloc = findCoverageIndex(coverage, g)
+    coverloc = findCoverageIndex(coverage, g.glyph)
     {o, glyphs} = if coverloc != nil do
       ruleset = Enum.at(rulesets, coverloc)
       #find first match in this ruleset
       # TODO: flag might mean we need to filter ignored categories
       # ie; skip marks
-      rule = Enum.find(ruleset, fn {input, _} -> Enum.take(glyphs, length(input)) == input end)
+      rule = Enum.find(ruleset, fn {input, _} -> Enum.take(glyphs, length(input)) |> Enum.map(&(&1.glyph))  == input end)
       if rule != nil do
-        # Logger.debug "GSUB5.1 rule = #{inspect rule}"
         {matched, substRecords} = rule
-        input = [g | matched]
+        input = [g | Enum.take(glyphs, length(matched))]
+        #IO.puts "GSUB5.1 rule = #{inspect input}"
         replaced = substRecords
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           candidate = Enum.at(acc, inputLoc)
           lookup = Enum.at(lookups, lookupIndex)
           {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+          #IO.puts "GSUB5.1 replace = #{inspect candidate} -> #{inspect replacement}"
           List.replace_at(acc, inputLoc, replacement)
         end)
         # skip over any matched glyphs
         # TODO: handle flags correctly
         # probably want to prepend earlier ignored glyphs to remaining
+        #IO.puts "GSUB5.1 replaced = #{inspect replaced}"
         remaining = Enum.slice(glyphs, length(matched), length(glyphs))
         {replaced, remaining}
       else
@@ -472,8 +481,8 @@ defmodule OpenType.Substitutions do
   # class-based context
   defp applyContextSub2(_coverage, _rulesets, _classes, _lookups, [], output), do: output
   defp applyContextSub2(coverage, rulesets, classes, lookups, [g | glyphs], output) do
-    coverloc = findCoverageIndex(coverage, g)
-    ruleset = Enum.at(rulesets, classifyGlyph(g, classes))
+    coverloc = findCoverageIndex(coverage, g.glyph)
+    ruleset = Enum.at(rulesets, classifyGlyph(g.glyph, classes))
     {o, glyphs} = if coverloc != nil  and ruleset != nil do
       #Logger.debug "GSUB5.2 rule = #{inspect ruleset}"
       #find first match in this ruleset
@@ -482,7 +491,7 @@ defmodule OpenType.Substitutions do
       rule = Enum.find(ruleset, fn {input, _} ->
                         candidates = glyphs
                           |> Enum.take(length(input))
-                          |> Enum.map(fn g -> classifyGlyph(g, classes) end)
+                          |> Enum.map(fn g -> classifyGlyph(g.glyph, classes) end)
                          candidates == input 
                        end)
       if rule != nil do
@@ -513,8 +522,8 @@ defmodule OpenType.Substitutions do
   # handle class-based format for context chaining
   defp applyChainingContextSub2(_coverage, _rulesets, _classes, _lookups, [], output), do: output
   defp applyChainingContextSub2(coverage, rulesets, {btClasses, inputClasses, laClasses}, lookups, [g | glyphs], output) do
-    coverloc = findCoverageIndex(coverage, g)
-    ruleset = Enum.at(rulesets, classifyGlyph(g, inputClasses))
+    coverloc = findCoverageIndex(coverage, g.glyph)
+    ruleset = Enum.at(rulesets, classifyGlyph(g.glyph, inputClasses))
     {o, glyphs} = if coverloc != nil  and ruleset != nil do
       # find first match
       rule = Enum.find(ruleset, fn rule -> doesCCS2match(rule, {btClasses, inputClasses, laClasses}, output, g, glyphs) end)
@@ -522,7 +531,7 @@ defmodule OpenType.Substitutions do
       if rule != nil do
         {_,im,_,substRecords} = rule
         inputExtra = length(im) - 1
-        input = [g] ++ Enum.take(glyphs, inputExtra)
+        input = [g | Enum.take(glyphs, inputExtra)]
         replaced = substRecords
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           candidate = Enum.at(acc, inputLoc)
@@ -556,7 +565,7 @@ defmodule OpenType.Substitutions do
       input = [g] ++ Enum.take(glyphs, inputExtra)
       inputMatches = input
                      |> Enum.zip(inputMatch)
-                     |> Enum.all?(fn {g, class} -> classifyGlyph(g, inputClasses) == class end)
+                     |> Enum.all?(fn {g, class} -> classifyGlyph(g.glyph, inputClasses) == class end)
 
       #do we match backtracking?
       backMatches = if backtrack > 0 do
@@ -564,7 +573,7 @@ defmodule OpenType.Substitutions do
         |> Enum.reverse
         |> Enum.take(backtrack)
         |> Enum.zip(btMatch)
-        |> Enum.all?(fn {g, class} -> classifyGlyph(g, btClasses) == class end)
+        |> Enum.all?(fn {g, class} -> classifyGlyph(g.glyph, btClasses) == class end)
       else
         true
       end
@@ -575,7 +584,7 @@ defmodule OpenType.Substitutions do
         |> Enum.drop(inputExtra)
         |> Enum.take(lookahead)
         |> Enum.zip(laMatch)
-        |> Enum.all?(fn {g, class} -> classifyGlyph(g, laClasses) == class end)
+        |> Enum.all?(fn {g, class} -> classifyGlyph(g.glyph, laClasses) == class end)
       else
         true
       end
@@ -603,7 +612,7 @@ defmodule OpenType.Substitutions do
       g
     else
       # do we match input gylph?
-      coverloc = findCoverageIndex(coverage, g)
+      coverloc = findCoverageIndex(coverage, g.glyph)
       inputMatches = coverloc != nil
 
       #do we match backtracking?
@@ -612,7 +621,7 @@ defmodule OpenType.Substitutions do
         |> Enum.reverse
         |> Enum.take(backtrack)
         |> Enum.zip(btCoverage)
-        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
       else
         true
       end
@@ -622,12 +631,12 @@ defmodule OpenType.Substitutions do
         output
         |> Enum.take(lookahead)
         |> Enum.zip(laCoverage)
-        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+        |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
       else
         true
       end
       if inputMatches and backMatches and laMatches do
-        Enum.at(subst, coverloc)
+        %{g | glyph: Enum.at(subst, coverloc)}
       else
         g
       end
@@ -654,7 +663,7 @@ defmodule OpenType.Substitutions do
         input = [g] ++ Enum.take(glyphs, inputExtra)
         inputMatches = input
                        |> Enum.zip(coverage)
-                       |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+                       |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
 
         #do we match backtracking?
         backMatches = if backtrack > 0 do
@@ -662,7 +671,7 @@ defmodule OpenType.Substitutions do
           |> Enum.reverse
           |> Enum.take(backtrack)
           |> Enum.zip(btCoverage)
-          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
         else
           true
         end
@@ -673,7 +682,7 @@ defmodule OpenType.Substitutions do
           |> Enum.drop(inputExtra)
           |> Enum.take(lookahead)
           |> Enum.zip(laCoverage)
-          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g) != nil end)
+          |> Enum.all?(fn {g, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
         else
           true
         end
@@ -733,10 +742,10 @@ defmodule OpenType.Substitutions do
   def filter_glyphs(glyphs, flag, gdef, mfs) do
     skipped = glyphs
               |> Enum.with_index
-              |> Enum.filter(fn {g, _} -> should_skip_glyph(g, flag, gdef, mfs) end)
+              |> Enum.filter(fn {g, _} -> should_skip_glyph(g.glyph, flag, gdef, mfs) end)
 
     filtered = glyphs
-              |> Enum.filter(fn g -> !should_skip_glyph(g, flag, gdef, mfs) end)
+              |> Enum.filter(fn g -> !should_skip_glyph(g.glyph, flag, gdef, mfs) end)
     {filtered, skipped}
   end
 
