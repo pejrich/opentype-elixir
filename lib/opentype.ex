@@ -121,11 +121,10 @@ defmodule OpenType do
 
     # mark any per-glyph features
     # TODO: shaper should work with glyphs rather than script
-    per_glyph_features = Layout.shape_glyphs(script, text)
+    per_glyph_features = Layout.shape_glyphs(script, glyphs)
 
     # do the subs
     output = glyphs
-             |> Enum.map(fn g -> g.glyph end)
              |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
 
     {output, pos} = output
@@ -172,7 +171,7 @@ defmodule OpenType do
                |> Enum.sort
                |> Enum.uniq
 
-    #TODO: we know which lookups are going to be used
+    # we know which lookups are going to be used
     # we can parse now, update subL, apply below!
     lookup_cache = Enum.reduce(lookups, subL, fn(x, cache) -> Substitutions.parse_lookup_table(x, cache) end)
 
@@ -184,9 +183,10 @@ defmodule OpenType do
           |> List.flatten
           |> Map.new
 
+    g2 = glyphs |> Enum.map(fn g -> g.glyph end)
     # apply the lookups and return the resulting {glyphs, pga}
     # (pga length changes when glyphs length changes)
-    {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
+    {g, _pga} = Enum.reduce(lookups, {g2, per_glyph_assignments}, fn (x, acc) ->
                 if pgl != nil and Map.has_key?(pgl, x) do
                   Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, Map.get(pgl, x), acc)
                 else

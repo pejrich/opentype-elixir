@@ -131,14 +131,12 @@ defmodule OpenType.Layout do
   # shape arabic and other cursive scripts
   # arabic, mongolian, syriac, n'ko, phags pa,
   # mandiac, manichaean, psalter pahlavi
-  def shape_glyphs(script, text) when script in ["arab", "mong", "syrc", "nko ", "phag", "mand", "mani", "phlp"] do
-    # TODO: use glyphs as input rather than text
-    # convert back to unicode codepoints
+  def shape_glyphs(script, glyphs) when script in ["arab", "mong", "syrc", "nko ", "phag", "mand", "mani", "phlp"] do
     features = ["isol", "medi", "init", "fina", "med2", "fin2", "fin3"]
 
     # look up shaping types
-    x = text
-        |> String.codepoints
+    x = glyphs
+        |> Stream.map(fn g -> hd(g.codepoints) end)
         |> Stream.map(&join_type(&1))
         |> Enum.to_list
 
