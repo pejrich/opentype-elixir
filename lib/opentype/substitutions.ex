@@ -32,30 +32,30 @@ defmodule OpenType.Substitutions do
     end
   end
 
-  defp parse_and_apply({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga}) do
-    apply_substitution({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga})
+  defp parse_and_apply({:parsed, type, flag, mfs, data}, gdef, lookups, tag, glyphs) do
+    apply_substitution({:parsed, type, flag, mfs, data}, gdef, lookups, tag, glyphs)
   end
 
-  defp parse_and_apply({7, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
+  defp parse_and_apply({7, flag, offsets, data, mfs}, gdef, lookups, tag, glyphs) do
     {actual_type, output} = parse_lookup(7, offsets, data)
     val = {:parsed, actual_type, flag, mfs, output}
-    apply_substitution(val, gdef, lookups, tag, {glyphs, pga})
+    apply_substitution(val, gdef, lookups, tag, glyphs)
   end
 
-  defp parse_and_apply({type, flag, offsets, data, mfs}, gdef, lookups, tag, {glyphs, pga}) do
+  defp parse_and_apply({type, flag, offsets, data, mfs}, gdef, lookups, tag, glyphs) do
     val = {:parsed, type, flag, mfs, parse_lookup(type, offsets, data)}
-    apply_substitution(val, gdef, lookups, tag, {glyphs, pga})
+    apply_substitution(val, gdef, lookups, tag, glyphs)
   end
 
   @doc """
   Apply the substitution to the input list of glyphs.
   """
-  def apply_substitution({:parsed, type, flag, mfs, data}, gdef, lookups, tag, {glyphs, pga}) when is_list(data) do
-    Enum.reduce(data, {glyphs, pga}, fn (subdata, input) -> apply_substitution({:parsed, type, flag, mfs, subdata}, gdef, lookups, tag, input) end)
+  def apply_substitution({:parsed, type, flag, mfs, data}, gdef, lookups, tag, glyphs) when is_list(data) do
+    Enum.reduce(data, glyphs, fn (subdata, input) -> apply_substitution({:parsed, type, flag, mfs, subdata}, gdef, lookups, tag, input) end)
   end
 
   # GSUB 1 -- single substitution (one-for-one)
-  def apply_substitution({:parsed, 1, _flag, _mfs, sub}, _gdef, _lookups, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 1, _flag, _mfs, sub}, _gdef, _lookups, tag, glyphs) do
     {coverage, replacements} = sub
     replace = fn g -> applySingleSub(g, coverage, replacements) end
     output = if tag != nil do
@@ -64,11 +64,11 @@ defmodule OpenType.Substitutions do
     else
       Enum.map(glyphs, replace)
     end
-    {output, pga}
+    output
   end
 
   #GSUB 2 - multiple substitution (expand one glyph into several)
-  def apply_substitution({:parsed, 2, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 2, _flag, _mfs, sub}, _gdef, _, tag, glyphs) do
     {coverage, sequences} = sub
     output = if tag != nil do
       glyphs
@@ -78,22 +78,11 @@ defmodule OpenType.Substitutions do
       |> Enum.map(fn g -> applyMultiSub(g, coverage, sequences) end)
     end
 
-    #ensure we preserve the per-glyph tags during expansion
-    pga_out = if pga do
-      output
-         |> Enum.with_index
-         |> Enum.map(fn {x, i} -> {x, Enum.at(pga, i)} end)
-         |> Enum.map(fn {g, assignment} -> if is_list(g), do: List.duplicate(assignment, length(g)), else: assignment  end)
-         |> List.flatten
-    else
-      pga
-    end
-
-    {List.flatten(output), pga_out}
+    List.flatten(output)
   end
 
   # GSUB type 3 -- alternate substitution (one-for-one)
-  def apply_substitution({:parsed, 3, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, _pga}) do
+  def apply_substitution({:parsed, 3, _flag, _mfs, sub}, _gdef, _, tag, glyphs) do
     {coverage, alts} = sub
     # TODO: seems like there's a way in unicode to specify alt??
     # More research required, for now substitute a random alt
@@ -105,7 +94,7 @@ defmodule OpenType.Substitutions do
   end
 
   # GSUB type 4 -- ligature substition (single glyph replaces multiple glyphs)
-  def apply_substitution({:parsed, 4, _flag, _mfs, sub}, _gdef, _, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 4, _flag, _mfs, sub}, _gdef, _, tag, glyphs) do
     {coverage, ligaOff} = sub
     if tag != nil do
       IO.puts "GSUB 4 per-glyph #{tag} lookup"
@@ -113,11 +102,11 @@ defmodule OpenType.Substitutions do
 
     #TODO: figure out per-glyph-annotation for ligature!
     #TODO: also need to track components through to positioning for GPOS5
-    {applyLigature(coverage, ligaOff, glyphs, []), pga}
+    applyLigature(coverage, ligaOff, glyphs, [])
   end
 
   #GSUB type 5 -- contextual substitution
-  def apply_substitution({:parsed, 5, _flag, _mfs, sub}, _gdef, lookups, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 5, _flag, _mfs, sub}, _gdef, lookups, tag, glyphs) do
     if tag != nil do
       IO.puts "GSUB 5 per-glyph #{tag} lookup"
     end
@@ -136,11 +125,11 @@ defmodule OpenType.Substitutions do
         Logger.debug "GSUB 5 - contextual substitution format #{format}"
         glyphs
     end
-    {output, pga}
+    output
   end
 
   #GSUB type 6 -- chained contextual substitution
-  def apply_substitution({:parsed, 6, flag, mfs, sub}, gdef, lookups, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 6, flag, mfs, sub}, gdef, lookups, tag, glyphs) do
     {format, rules} = sub
     output = case format do
       1 ->
@@ -157,23 +146,23 @@ defmodule OpenType.Substitutions do
       3 ->
         {btCoverage, coverage, laCoverage, substRecords} = rules
         {f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
-        replaced = applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, f, {tag, pga}, [])
+        replaced = applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, f, tag, [])
         unfilter_glyphs(replaced, skipped)
       _ ->
         Logger.debug "GSUB 6 - chaining substitution format #{format}"
         glyphs
     end
-    {output, pga}
+    output
   end
 
   #GSUB type 7 is only parsed, never applied!!
-  def apply_substitution({:parsed, 7, _flag, _mfs, _sub}, _gdef, _lookups, _tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 7, _flag, _mfs, _sub}, _gdef, _lookups, _tag, glyphs) do
     Logger.error "GSUB 7 is for parsing extended tables, not applying!"
-    {glyphs, pga}
+    glyphs
   end
 
   #GSUB type 8 -- reverse chained contextual substitution
-  def apply_substitution({:parsed, 8, flag, mfs, sub}, gdef, lookups, tag, {glyphs, pga}) do
+  def apply_substitution({:parsed, 8, flag, mfs, sub}, gdef, lookups, tag, glyphs) do
     if tag != nil do
       IO.puts "GSUB 8 per-glyph #{tag} lookup"
     end
@@ -183,7 +172,7 @@ defmodule OpenType.Substitutions do
     {f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
     replaced = applyReverseChainingContext(btCoverage, coverage, laCoverage, substRecords, lookups, f, [])
     output = unfilter_glyphs(replaced, skipped)
-    {output, pga}
+    output
   end
 
   @doc """
@@ -452,7 +441,7 @@ defmodule OpenType.Substitutions do
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           candidate = Enum.at(acc, inputLoc)
           lookup = Enum.at(lookups, lookupIndex)
-          {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+          [replacement | _] = parse_and_apply(lookup, nil, lookups, nil, [candidate])
           #IO.puts "GSUB5.1 replace = #{inspect candidate} -> #{inspect replacement}"
           List.replace_at(acc, inputLoc, replacement)
         end)
@@ -495,7 +484,7 @@ defmodule OpenType.Substitutions do
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           candidate = Enum.at(acc, inputLoc)
           lookup = Enum.at(lookups, lookupIndex)
-          {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+          [replacement | _] = parse_and_apply(lookup, nil, lookups, nil, [candidate])
           List.replace_at(acc, inputLoc, replacement)
         end)
         # skip over any matched glyphs
@@ -530,7 +519,7 @@ defmodule OpenType.Substitutions do
         |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
           candidate = Enum.at(acc, inputLoc)
           lookup = Enum.at(lookups, lookupIndex)
-          {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+          [replacement | _] = parse_and_apply(lookup, nil, lookups, nil, [candidate])
           List.replace_at(acc, inputLoc, replacement)
         end)
         # Logger.debug "GSUB6.2 rule = #{inspect input} =>  #{inspect replaced}"
@@ -641,7 +630,7 @@ defmodule OpenType.Substitutions do
 
   # handle coverage-based format for context chaining
   defp applyChainingContextSub3(_btCoverage, _coverage, _laCoverage, _subst, _, [], _pga, output), do: output
-  defp applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, [g | glyphs], {tag, pga}, output) do
+  defp applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, [g | glyphs], tag, output) do
     backtrack = length(btCoverage)
     inputExtra = length(coverage) - 1
     lookahead = length(laCoverage)
@@ -686,7 +675,7 @@ defmodule OpenType.Substitutions do
                      |> Enum.reduce(input, fn {inputLoc, lookupIndex}, acc ->
                        candidate = Enum.at(acc, inputLoc)
                        lookup = Enum.at(lookups, lookupIndex)
-                       {[replacement | _], _} = parse_and_apply(lookup, nil, lookups, nil, {[candidate], nil})
+                       [replacement | _] = parse_and_apply(lookup, nil, lookups, nil, [candidate])
                        List.replace_at(acc, inputLoc, replacement)
                      end)
           replaced
@@ -695,8 +684,7 @@ defmodule OpenType.Substitutions do
         end
     end
     output = output ++ oo
-    pga = if length(pga) > 0, do: tl(pga), else: pga
-    applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, glyphs, {tag, pga}, output)
+    applyChainingContextSub3(btCoverage, coverage, laCoverage, substRecords, lookups, glyphs, tag, output)
   end
 
   # given a glyph, find out the coverage index (can be nil)

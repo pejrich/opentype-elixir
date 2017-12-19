@@ -191,12 +191,12 @@ defmodule OpenType do
 
     # apply the lookups and return the resulting {glyphs, pga}
     # (pga length changes when glyphs length changes)
-    {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
-                if pgl != nil and Map.has_key?(pgl, x) do
-                  Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, Map.get(pgl, x), acc)
-                else
-                  Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, nil, acc)
-                end
+    g = Enum.reduce(lookups, glyphs, fn (x, acc) ->
+      if pgl != nil and Map.has_key?(pgl, x) do
+        Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, Map.get(pgl, x), acc)
+      else
+        Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, nil, acc)
+      end
     end)
     g
   end
