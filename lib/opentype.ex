@@ -128,7 +128,6 @@ defmodule OpenType do
              |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
 
     {output, pos} = output
-                    |> Enum.map(fn g -> g.glyph end)
                     |> position_glyphs(ttf, script, lang, features)
 
     {output, pos}
@@ -183,7 +182,6 @@ defmodule OpenType do
           |> List.flatten
           |> Map.new
 
-    g2 = glyphs |> Enum.map(fn g -> g.glyph end)
     # apply the lookups and return the resulting {glyphs, pga}
     # (pga length changes when glyphs length changes)
     {g, _pga} = Enum.reduce(lookups, {glyphs, per_glyph_assignments}, fn (x, acc) ->
@@ -203,7 +201,7 @@ defmodule OpenType do
     # this is sufficient if kerning information is missing
     # TODO: handle vertical writing
     positions = glyphs
-                |> Enum.map(fn g -> Enum.at(ttf.glyphWidths, g, ttf.defaultWidth) end)
+                |> Enum.map(fn g -> Enum.at(ttf.glyphWidths, g.glyph, ttf.defaultWidth) end)
                 |> Enum.map(fn advance -> {:std_width, 0, 0, advance, 0} end)
 
     #TODO: if no GPOS, fallback to kern table
@@ -224,8 +222,6 @@ defmodule OpenType do
                |> Enum.sort
                |> Enum.uniq
 
-
-    #TODO: we know which lookups are going to be used
     # we can parse now, update subL, apply below!
     lookup_cache = Enum.reduce(indices, lookups, fn(x, cache) -> Positioning.parse_lookup_table(x, cache) end)
 
@@ -242,6 +238,7 @@ defmodule OpenType do
     # then apply any mark adjustments
     {p, _deltas} = Positioning.adjustMarkOffsets(p, mDeltas, isRTL)
 
+    g = g |> Enum.map(&(&1.glyph))
 
     #if script is RTL, reverse
     if isRTL do

@@ -66,12 +66,12 @@ defmodule OpenType.Positioning do
     adjusted = case fmt do
     1 ->
       Enum.map(glyphs, fn g ->
-        coverloc = findCoverageIndex(coverage, g)
+        coverloc = findCoverageIndex(coverage, g.glyph)
         if coverloc != nil, do: values, else: nil
       end)
     2 ->
       Enum.map(glyphs, fn g ->
-        coverloc = findCoverageIndex(coverage, g)
+        coverloc = findCoverageIndex(coverage, g.glyph)
         if coverloc != nil, do: Enum.at(values, coverloc), else: nil
       end)
     end
@@ -439,18 +439,18 @@ defmodule OpenType.Positioning do
   end
   defp applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, prev, [{g, gi} | glyphs], pos, deltas) do
     # should we skip this glyph?
-    skipMark = should_skip_glyph(g, lookupFlag, gdef, mfs)
-    markloc = findCoverageIndex(markCoverage, g)
+    skipMark = should_skip_glyph(g.glyph, lookupFlag, gdef, mfs)
+    markloc = findCoverageIndex(markCoverage, g.glyph)
 
     # TODO: this code assumes prev is a base
     {base_glyph, prev_i} = if gdef != nil do
       # find a base
-      Enum.find(prev, fn {x, _} -> classifyGlyph(x, gdef.classes) == 1 end)
+      Enum.find(prev, fn {x, _} -> classifyGlyph(x.glyph, gdef.classes) == 1 end)
     else
       hd(prev)
     end
 
-    baseloc = findCoverageIndex(baseCoverage, base_glyph)
+    baseloc = findCoverageIndex(baseCoverage, base_glyph.glyph)
 
     {mark_offset, delta} = if markloc != nil and baseloc != nil and !skipMark do
       b = Enum.at(baseArray, baseloc)
@@ -471,8 +471,8 @@ defmodule OpenType.Positioning do
   defp applyKerning2(_classDef1, _clasDef2, _pairSets, [], output), do: output
   defp applyKerning2(_classDef1, _clasDef2, _pairSets, [_], output), do: output ++ [nil]
   defp applyKerning2(classDef1, classDef2, pairsets, [g1, g2 | glyphs], output) do
-    c1 = classifyGlyph(g1, classDef1)
-    c2 = classifyGlyph(g2, classDef2)
+    c1 = classifyGlyph(g1.glyph, classDef1)
+    c2 = classifyGlyph(g2.glyph, classDef2)
     pair = pairsets |> Enum.at(c1) |> Enum.at(c2)
     {output, glyphs} = if pair != nil do
       {v1, v2} = pair
@@ -492,11 +492,11 @@ defmodule OpenType.Positioning do
   defp applyKerning(_coverage, _pairSets, [_], output), do: output ++ [nil]
   defp applyKerning(coverage, pairSets, [g | glyphs], output) do
     # get the index of a pair set that might apply
-    coverloc = findCoverageIndex(coverage, g)
+    coverloc = findCoverageIndex(coverage, g.glyph)
     {output, glyphs} = if coverloc != nil do
       pairSet = Enum.at(pairSets, coverloc)
       nextChar = hd(glyphs)
-      pair = Enum.find(pairSet, fn {g, _, _} -> g == nextChar end)
+      pair = Enum.find(pairSet, fn {g, _, _} -> g == nextChar.glyph end)
       if pair != nil do
         {_, v1, v2} = pair
         oo = output ++ [v1]
@@ -522,8 +522,8 @@ defmodule OpenType.Positioning do
     <<_attachmentType::8, _::3, _useMark::1, _ignoreMark::1, _ignoreLig::1, _ignoreBase::1, rtl::1>> = <<flag::16>>
 
 
-    curloc = findCoverageIndex(coverage, g)
-    nextloc = findCoverageIndex(coverage, g2)
+    curloc = findCoverageIndex(coverage, g.glyph)
+    nextloc = findCoverageIndex(coverage, g2.glyph)
 
 
     p = Enum.at(pos, gi)
@@ -616,8 +616,8 @@ defmodule OpenType.Positioning do
   # class-based context
   defp applyContextPos2(_coverage, _rulesets, _classes, _gdef, _lookups, [], [], output), do: output
   defp applyContextPos2(coverage, rulesets, classes, gdef, lookups, [g | glyphs], [p | pos], output) do
-    coverloc = findCoverageIndex(coverage, g)
-    ruleset = Enum.at(rulesets, classifyGlyph(g, classes))
+    coverloc = findCoverageIndex(coverage, g.glyph)
+    ruleset = Enum.at(rulesets, classifyGlyph(g.glyph, classes))
     {o, glyphs, pos} = if coverloc != nil  and ruleset != nil do
       #find first match in this ruleset
       # TODO: flag might mean we need to filter ignored categories
@@ -625,7 +625,7 @@ defmodule OpenType.Positioning do
       rule = Enum.find(ruleset, fn {input, _} ->
                         candidates = glyphs
                           |> Enum.take(length(input))
-                          |> Enum.map(fn g -> classifyGlyph(g, classes) end)
+                          |> Enum.map(fn g -> classifyGlyph(g.glyph, classes) end)
                          candidates == input 
                        end)
       if rule != nil do
@@ -674,14 +674,14 @@ defmodule OpenType.Positioning do
       input = [{g, index} | Enum.take(glyphs, inputExtra)]
       inputMatches = input
                      |> Enum.zip(coverage)
-                     |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g) != nil end)
+                     |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
 
       #do we match backtracking?
       backMatches = if backtrack > 0 do
         output
         |> Enum.take(backtrack)
         |> Enum.zip(btCoverage)
-        |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g) != nil end)
+        |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
       else
         true
       end
@@ -692,7 +692,7 @@ defmodule OpenType.Positioning do
         |> Enum.drop(inputExtra)
         |> Enum.take(lookahead)
         |> Enum.zip(laCoverage)
-        |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g) != nil end)
+        |> Enum.all?(fn {{g, _index}, cov} -> findCoverageIndex(cov, g.glyph) != nil end)
       else
         true
       end
@@ -787,7 +787,7 @@ defmodule OpenType.Positioning do
   def filter_glyphs(glyphs, flag, gdef, mfs) do
     glyphs
     |> Stream.with_index
-    |> Stream.reject(fn {g, _} -> should_skip_glyph(g, flag, gdef, mfs) end)
+    |> Stream.reject(fn {g, _} -> should_skip_glyph(g.glyph, flag, gdef, mfs) end)
   end
 
 end
