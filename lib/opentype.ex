@@ -189,8 +189,7 @@ defmodule OpenType do
           |> List.flatten
           |> Map.new
 
-    # apply the lookups and return the resulting {glyphs, pga}
-    # (pga length changes when glyphs length changes)
+    # apply the lookups and return the resulting glyphs
     g = Enum.reduce(lookups, glyphs, fn (x, acc) ->
       if pgl != nil and Map.has_key?(pgl, x) do
         Substitutions.apply_substitution(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, Map.get(pgl, x), acc)

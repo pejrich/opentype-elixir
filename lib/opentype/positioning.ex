@@ -149,7 +149,7 @@ defmodule OpenType.Positioning do
     # same as format 4, except "base" is another mark
     {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
-    # adjusted = applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos, [nil])
+    # adjusted = applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos)
     #Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
     # {glyphs, positioning, c, m}
