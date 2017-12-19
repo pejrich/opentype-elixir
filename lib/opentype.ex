@@ -208,8 +208,9 @@ defmodule OpenType do
     # this is sufficient if kerning information is missing
     # TODO: handle vertical writing
     positions = glyphs
-                |> Enum.map(fn g -> Enum.at(ttf.glyphWidths, g.glyph, ttf.defaultWidth) end)
-                |> Enum.map(fn advance -> {:std_width, 0, 0, advance, 0} end)
+                |> Stream.map(fn g -> Enum.at(ttf.glyphWidths, g.glyph, ttf.defaultWidth) end)
+                |> Stream.map(fn advance -> {:std_width, 0, 0, advance, 0} end)
+                |> Enum.to_list
 
     #TODO: if no GPOS, fallback to kern table
     #
@@ -222,8 +223,8 @@ defmodule OpenType do
     # each feature provides lookup indices
     # combine indices, apply in order given in LookupList table
     indices = availableFeatures
-               |> Enum.map(fn x -> Enum.at(features, x) end)
-               |> Enum.filter(fn {tag, _} -> tag in active_features end)
+               |> Stream.map(fn x -> Enum.at(features, x) end)
+               |> Stream.filter(fn {tag, _} -> tag in active_features end)
                |> Enum.map(fn {_, l} -> l end)
                |> List.flatten
                |> Enum.sort
@@ -235,15 +236,15 @@ defmodule OpenType do
     isRTL = UnicodeData.right_to_left?(script)
     # apply the lookups
     # returns glyphs, positioning, cursive attachments
-    cursiveDeltas = List.duplicate(0, length(glyphs))
-    {g, p, cDeltas} = Enum.reduce(indices, {glyphs, positions, cursiveDeltas}, 
+    {g, p} = Enum.reduce(indices, {glyphs, positions}, 
                                            fn (x, acc) -> Positioning.apply_lookup(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, isRTL, acc) end)
     # make cursive and mark positioning adjustments
-    md2 = g |> Enum.map(&(&1.markDelta))
     # first apply any cursive adjustments
+    cDeltas = g |> Enum.map(&(&1.cursiveDelta))
     {p, _deltas} = Positioning.adjustCursiveOffset(p, cDeltas)
     # then apply any mark adjustments
-    {p, _deltas} = Positioning.adjustMarkOffsets(p, md2, isRTL)
+    mDeltas = g |> Enum.map(&(&1.markDelta))
+    {p, _deltas} = Positioning.adjustMarkOffsets(p, mDeltas, isRTL)
 
     g = g |> Enum.map(&(&1.glyph))
 
