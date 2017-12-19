@@ -234,16 +234,16 @@ defmodule OpenType do
 
     isRTL = UnicodeData.right_to_left?(script)
     # apply the lookups
-    # returns glyphs, positioning, cursive attachments, mark attachments
+    # returns glyphs, positioning, cursive attachments
     cursiveDeltas = List.duplicate(0, length(glyphs))
-    markDeltas = List.duplicate(0, length(glyphs))
-    {g, p, cDeltas, mDeltas} = Enum.reduce(indices, {glyphs, positions, cursiveDeltas, markDeltas}, 
+    {g, p, cDeltas} = Enum.reduce(indices, {glyphs, positions, cursiveDeltas}, 
                                            fn (x, acc) -> Positioning.apply_lookup(Enum.at(lookup_cache, x), ttf.definitions, lookup_cache, isRTL, acc) end)
     # make cursive and mark positioning adjustments
+    md2 = g |> Enum.map(&(&1.markDelta))
     # first apply any cursive adjustments
     {p, _deltas} = Positioning.adjustCursiveOffset(p, cDeltas)
     # then apply any mark adjustments
-    {p, _deltas} = Positioning.adjustMarkOffsets(p, mDeltas, isRTL)
+    {p, _deltas} = Positioning.adjustMarkOffsets(p, md2, isRTL)
 
     g = g |> Enum.map(&(&1.glyph))
 

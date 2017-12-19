@@ -56,11 +56,11 @@ defmodule OpenType.Positioning do
     apply_lookup(val, gdef, lookups, isRTL, input)
   end
 
-  def apply_lookup({:parsed, type, flag, mfs, data}, gdef, lookups, isRTL, {glyphs, pos, c, m}) when is_list(data) do
-    Enum.reduce(data, {glyphs, pos, c, m}, fn (subdata, input) -> apply_lookup({:parsed, type, flag, mfs, subdata}, gdef, lookups, isRTL, input) end)
+  def apply_lookup({:parsed, type, flag, mfs, data}, gdef, lookups, isRTL, {glyphs, pos, c}) when is_list(data) do
+    Enum.reduce(data, {glyphs, pos, c}, fn (subdata, input) -> apply_lookup({:parsed, type, flag, mfs, subdata}, gdef, lookups, isRTL, input) end)
   end
 
-  def apply_lookup({:parsed, 1, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 1, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c}) do
     {fmt, coverage, values} = data
 
     adjusted = case fmt do
@@ -76,10 +76,10 @@ defmodule OpenType.Positioning do
       end)
     end
     positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
-    {glyphs, positioning, c, m}
+    {glyphs, positioning, c}
   end
 
-  def apply_lookup({:parsed, 2, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 2, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c}) do
     {fmt, values} = data
     kerning = case fmt do
       1 ->
@@ -94,10 +94,10 @@ defmodule OpenType.Positioning do
         applyKerning2(class1, class2, pairSets, glyphs, [])
     end
     positioning = Enum.zip(pos, kerning) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
-    {glyphs, positioning, c, m}
+    {glyphs, positioning, c}
   end
 
-  def apply_lookup({:parsed, 3, flag, mfs, data}, gdef, _lookups, isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 3, flag, mfs, data}, gdef, _lookups, isRTL, {glyphs, pos, c}) do
     {coverage, anchorPairs} = data
 
     # filter the glyphs
@@ -113,9 +113,9 @@ defmodule OpenType.Positioning do
     cdeltas = c
           |> Enum.with_index
           |> Enum.map(fn {v, i} -> if v != 0, do: v, else: Enum.at(d, i) end)
-    {glyphs, p, cdeltas, m}
+    {glyphs, p, cdeltas}
   end
-  def apply_lookup({:parsed, 4, flag, mfs, data}, gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 4, flag, mfs, data}, gdef, _lookups, _isRTL, {glyphs, pos, c}) do
     {markCoverage, baseCoverage, baseArray, markArray} = data
 
     # filter the glyphs
@@ -125,21 +125,20 @@ defmodule OpenType.Positioning do
     deltas = List.duplicate(0, length(c))
 
     # align attachment points
-    {adjusted, d} = applyMarkToBase(markCoverage, baseCoverage, 
+    {adjusted, d_glyphs, _d} = applyMarkToBase(markCoverage, baseCoverage, 
                                baseArray, markArray, 
                                # skip flags and GDEF info
                                flag, mfs, gdef, 
                                [], g, pos, deltas)
 
-    # combine with any existing deltas
-    mdeltas = m
-          |> Enum.with_index
-          |> Enum.map(fn {v, i} -> if v != 0, do: v, else: Enum.at(d, i) end)
+    g2 = d_glyphs
+         |> Enum.reduce(glyphs, fn ({x, i}, acc) -> if Enum.at(acc, i).markDelta == 0, do: List.replace_at(acc, i, x), else: acc end)
+
     # apply the adjustments to positioning
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
-    {glyphs, adjusted, c, mdeltas}
+    {g2, adjusted, c}
   end
-  def apply_lookup({:parsed, 5, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 5, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c}) do
     {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
     Logger.debug "GPOS 5 - mark to ligature"
@@ -151,9 +150,9 @@ defmodule OpenType.Positioning do
     # where a 'calt' liga + subsequent 'liga' moves target component for
     # mark that is itself a ligature!
     # TODO: we now have a struct that capture this for us!
-    {glyphs, pos, c, m}
+    {glyphs, pos, c}
   end
-  def apply_lookup({:parsed, 6, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 6, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c}) do
     # same as format 4, except "base" is another mark
     {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
@@ -161,9 +160,9 @@ defmodule OpenType.Positioning do
     #Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
     # {glyphs, positioning, c, m}
-    {glyphs, pos, c, m}
+    {glyphs, pos, c}
   end
-  def apply_lookup({:parsed, 7, _flag, _mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 7, _flag, _mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c}) do
     {format, val} = data
     pos = case format do
       1 ->
@@ -180,9 +179,9 @@ defmodule OpenType.Positioning do
         Logger.debug "GPOS 7 - contextual positioning format #{format}"
         pos
     end
-    {glyphs, pos, c, m}
+    {glyphs, pos, c}
   end
-  def apply_lookup({:parsed, 8, flag, mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c, m}) do
+  def apply_lookup({:parsed, 8, flag, mfs, data}, gdef, lookups, _isRTL, {glyphs, pos, c}) do
     {format, val} = data
     pos = case format do
       1 ->
@@ -200,7 +199,7 @@ defmodule OpenType.Positioning do
         Logger.debug "GPOS 8 - chained contextual positioning format #{format}"
         pos
     end
-    {glyphs, pos, c, m}
+    {glyphs, pos, c}
   end
 
   def parse_lookup(9, offsets, data) do
@@ -434,7 +433,7 @@ defmodule OpenType.Positioning do
     {format, val}
   end
 
-  defp applyMarkToBase(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, _prev, [], pos, deltas), do: {pos, deltas}
+  defp applyMarkToBase(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, prev, [], pos, deltas), do: {pos, Enum.reverse(prev), deltas}
   defp applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [], [{g, gi} | glyphs], pos, deltas) do
     applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi}], glyphs, pos, deltas)
   end
@@ -466,6 +465,8 @@ defmodule OpenType.Positioning do
     end
     updated = pos |> List.replace_at(gi, mark_offset)
     updated_deltas = deltas |> List.replace_at(gi, delta)
+    # for now avoid overwriting
+    g = if g.markDelta == 0, do: %{g | markDelta: delta}, else: g
     applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi} | prev], glyphs, updated, updated_deltas)
   end
 
@@ -705,7 +706,7 @@ defmodule OpenType.Positioning do
           {g, index} = Enum.at(input, inputIndex)
           candidate_position = Enum.at(accPos, index)
           # we only care about the new pos
-          {_, [adjusted_pos | _], _, _} = parse_and_apply(lookup, gdef, lookups, nil, {[g], [candidate_position], [], []})
+          {_, [adjusted_pos | _], _} = parse_and_apply(lookup, gdef, lookups, nil, {[g], [candidate_position], []})
           List.replace_at(accPos, index, adjusted_pos)
         end)
       else
