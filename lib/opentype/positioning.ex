@@ -150,6 +150,7 @@ defmodule OpenType.Positioning do
     # see https://bugzilla.gnome.org/show_bug.cgi?id=437633 for a torture test
     # where a 'calt' liga + subsequent 'liga' moves target component for
     # mark that is itself a ligature!
+    # TODO: we now have a struct that capture this for us!
     {glyphs, pos, c, m}
   end
   def apply_lookup({:parsed, 6, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos, c, m}) do

@@ -402,7 +402,9 @@ defmodule OpenType.Substitutions do
     coverloc = findCoverageIndex(coverage, g.glyph)
     {output, glyphs} = if coverloc != nil do
       # find first match in this ligature set (if any)
-      # TODO: flag might mean we need to filter ignored categories
+      # TODO: glyphs |> filter skip glyphs |> take N |> match
+      # some kind of acc for skipped glyphs so they can be placed after ligature 
+      # with appropriate componentIDs and mark deltas
       # ie; skip marks
       lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> glyphs |> Enum.take(length(match)) |> Enum.map(fn x -> x.glyph end) == match end)
       if lig != nil do
