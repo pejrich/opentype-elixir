@@ -132,7 +132,7 @@ defmodule OpenType do
 
     # do the subs
     output = glyphs
-             |> handle_substitutions(ttf, script, lang, features, {per_glyph_features, assignments})
+             |> handle_substitutions(ttf, script, lang, features, per_glyph_features)
 
     {output, pos} = output
                     |> position_glyphs(ttf, script, lang, features)
@@ -161,7 +161,7 @@ defmodule OpenType do
 
   # subtitute ligatures, positional forms, stylistic alternates, etc
   # based upon the script, language, and active OpenType features
-  defp handle_substitutions(glyphs, ttf, script, lang, active_features, {per_glyph_features, per_glyph_assignments}) do
+  defp handle_substitutions(glyphs, ttf, script, lang, active_features, per_glyph_features) do
     # use data in GSUB to do any substitutions
     {scripts, subF, subL} = ttf.substitutions
 
