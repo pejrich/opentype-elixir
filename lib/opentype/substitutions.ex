@@ -94,7 +94,7 @@ defmodule OpenType.Substitutions do
   end
 
   # GSUB type 4 -- ligature substition (single glyph replaces multiple glyphs)
-  def apply_substitution({:parsed, 4, _flag, _mfs, sub}, _gdef, _, tag, glyphs) do
+  def apply_substitution({:parsed, 4, flag, mfs, sub}, gdef, _, tag, glyphs) do
     {coverage, ligaOff} = sub
     if tag != nil do
       IO.puts "GSUB 4 per-glyph #{tag} lookup"
@@ -102,7 +102,7 @@ defmodule OpenType.Substitutions do
 
     #TODO: figure out per-glyph-annotation for ligature!
     #TODO: also need to track components through to positioning for GPOS5
-    applyLigature(coverage, ligaOff, glyphs, [])
+    applyLigature(coverage, ligaOff, flag, gdef, mfs, glyphs, [])
   end
 
   #GSUB type 5 -- contextual substitution
@@ -396,34 +396,68 @@ defmodule OpenType.Substitutions do
       g
     end
   end
-  defp applyLigature(_coverage, _ligatures, [], output), do: output
-  defp applyLigature(coverage, ligatures, [g | glyphs], output) do
+
+  defp matchLigatureRule?(glyphs, match, flag, gdef, mfs) do
+    candidate = glyphs
+                |> lig_components(length(match), flag, gdef, mfs)
+                |> Enum.map(fn {g, _} -> g.glyph end)
+    candidate == match
+  end
+  defp lig_components(glyphs, n, flag, gdef, mfs) do
+    glyphs
+    |> Stream.with_index(1)
+    |> Stream.reject(fn {g, _} -> should_skip_glyph?(g.glyph, flag, gdef, mfs) end)
+    |> Stream.take(n)
+  end
+
+  defp applyLigature(_coverage, _ligatures, _flag, _gdef, _mfs, [], output), do: Enum.reverse(output)
+  defp applyLigature(coverage, ligatures, flag, gdef, mfs, [g | glyphs], output) do
     # get the index of a ligature set that might apply
     coverloc = findCoverageIndex(coverage, g.glyph)
     {output, glyphs} = if coverloc != nil do
       # find first match in this ligature set (if any)
-      # TODO: glyphs |> filter skip glyphs |> take N |> match
-      # some kind of acc for skipped glyphs so they can be placed after ligature 
-      # with appropriate componentIDs and mark deltas
-      # ie; skip marks
-      lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> glyphs |> Enum.take(length(match)) |> Enum.map(fn x -> x.glyph end) == match end)
+      lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> matchLigatureRule?(glyphs, match, flag, gdef, mfs) end)
       if lig != nil do
         # replace the current glyph
         {rep, m} = lig
-        matched = [g | glyphs] |> Enum.take(length(m)+1) |> Enum.map(fn x -> x.codepoints end) |> Enum.concat
+        # some kind of acc for skipped glyphs so they can be placed after ligature 
+        # with appropriate componentIDs and mark deltas
+        # ie; skip marks
+        matched = [g | glyphs]
+                  |> lig_components(length(m)+1, flag, gdef, mfs)
+                  |> Stream.map(fn {g, _} -> g.components end)
+                  |> Enum.concat
+
+        {_, n_total} = glyphs
+                  |> lig_components(length(m), flag, gdef, mfs)
+                  |> Enum.to_list
+                  |> List.last
+
         replacement = %{g | glyph: rep, codepoints: matched, isLigature: true}
         # skip over any matched glyphs
-        # TODO: handle flags correctly
+        skipped = if n_total != length(m) do
+          IO.puts "LIG: Match #{length(m)} glyphs out of #{n_total}"
+          # take n_total; if skipped set mComponent else increment compID
+          # TODO: we should only set mLigComponent when is mark; need to review
+          {markss, _lastcompID} = glyphs
+                   |> Stream.take(n_total)
+                   |> Enum.map_reduce(1, fn (g, compID) -> if should_skip_glyph?(g.glyph, flag, gdef, mfs), do: { %{g | mLigComponent: compID}, compID}, else: {g, compID + 1} end)
+          markss |> Enum.take(&(should_skip_glyph?(&1.glyph, flag, gdef, mfs)))
+        else
+          []
+        end
         # probably want to prepend earlier ignored glyphs to remaining
-        remaining = Enum.slice(glyphs, length(m), length(glyphs))
-        {output ++ [replacement], remaining}
+        remaining = Enum.slice(glyphs, n_total, length(glyphs))
+          # remaining - split_while isMark (marks, extra)
+          # for remaining while mark set compID
+        {[replacement | output], skipped ++ remaining}
       else
-        {output ++ [g], glyphs}
+        {[g | output], glyphs}
       end
     else
-      {output ++ [g], glyphs}
+      {[g | output], glyphs}
     end
-    applyLigature(coverage, ligatures, glyphs, output)
+    applyLigature(coverage, ligatures, flag, gdef, mfs, glyphs, output)
   end
 
   defp applyContextSub1(_coverage, _rulesets, _lookups, [], output), do: output
@@ -726,10 +760,10 @@ defmodule OpenType.Substitutions do
   def filter_glyphs(glyphs, flag, gdef, mfs) do
     skipped = glyphs
               |> Enum.with_index
-              |> Enum.filter(fn {g, _} -> should_skip_glyph(g.glyph, flag, gdef, mfs) end)
+              |> Enum.filter(fn {g, _} -> should_skip_glyph?(g.glyph, flag, gdef, mfs) end)
 
     filtered = glyphs
-              |> Enum.filter(fn g -> !should_skip_glyph(g.glyph, flag, gdef, mfs) end)
+              |> Enum.reject(fn g -> should_skip_glyph?(g.glyph, flag, gdef, mfs) end)
     {filtered, skipped}
   end
 
@@ -741,7 +775,7 @@ defmodule OpenType.Substitutions do
 
 
   # returns true when the lookup flag is set to a value
-  def should_skip_glyph(g, flag, gdef, mfs) do
+  def should_skip_glyph?(g, flag, gdef, mfs) do
     # decompose the flag
     <<attachmentType::8, _::3, useMarkFilteringSet::1, ignoreMark::1, ignoreLig::1, ignoreBase::1, _rtl::1>> = <<flag::16>>
 

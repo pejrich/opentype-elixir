@@ -135,6 +135,7 @@ defmodule OpenType.Positioning do
     {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
 
     Logger.debug "GPOS 5 - mark to ligature"
+    #raise "GPOS 5 - mark to ligature"
     # for this to work, we need to know which ligature component to
     # attach the mark to -- needs to be set during GSUB 4 processing!
     # in the absense of such info we could work backwards through the components
@@ -438,7 +439,9 @@ defmodule OpenType.Positioning do
     # TODO: this code assumes prev is a base
     {base_glyph, prev_i} = if gdef != nil do
       # find a base
-      Enum.find(prev, fn {x, _} -> classifyGlyph(x.glyph, gdef.classes) == 1 end)
+      base = Enum.find(prev, fn {x, _} -> classifyGlyph(x.glyph, gdef.classes) == 1 end)
+      # handle case where no base anywhere in preceding characters
+      if base == nil, do: hd(prev), else: base
     else
       hd(prev)
     end

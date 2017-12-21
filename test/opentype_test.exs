@@ -100,4 +100,12 @@ defmodule OpenTypeTest do
     assert glyphs ==  [304, 248, 7, 277, 269]
   end
 
+  test "Exercise GPOS 5 (mark to ligature)" do
+    ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
+
+    #step 1: generate the ligature we'll position
+    {glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0622\u0650")
+    assert glyphs ==  [830,317,268]
+    IO.inspect pos
+  end
 end
