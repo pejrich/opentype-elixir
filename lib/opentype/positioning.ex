@@ -131,10 +131,19 @@ defmodule OpenType.Positioning do
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
     {g2, adjusted}
   end
-  def apply_lookup({:parsed, 5, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos}) do
-    {_markCoverage, _baseCoverage, _baseArray, _markArray} = data
+  def apply_lookup({:parsed, 5, flag, mfs, data}, gdef, _lookups, _isRTL, {glyphs, pos}) do
+    {markCoverage, baseCoverage, baseArray, markArray} = data
 
     Logger.debug "GPOS 5 - mark to ligature"
+    g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list
+    {adjusted, d_glyphs} = applyMarkToLig(markCoverage, baseCoverage, 
+                               baseArray, markArray, 
+                               # skip flags and GDEF info
+                               flag, mfs, gdef, 
+                               [], g, pos)
+
+    g2 = d_glyphs
+         |> Enum.reduce(glyphs, fn ({x, i}, acc) -> if Enum.at(acc, i).markDelta == 0, do: List.replace_at(acc, i, x), else: acc end)
     #raise "GPOS 5 - mark to ligature"
     # for this to work, we need to know which ligature component to
     # attach the mark to -- needs to be set during GSUB 4 processing!
@@ -143,8 +152,8 @@ defmodule OpenType.Positioning do
     # see https://bugzilla.gnome.org/show_bug.cgi?id=437633 for a torture test
     # where a 'calt' liga + subsequent 'liga' moves target component for
     # mark that is itself a ligature!
-    # TODO: we now have a struct that capture this for us!
-    {glyphs, pos}
+    # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> addPos(v1,v2) end)
+    {g2, adjusted}
   end
   def apply_lookup({:parsed, 6, _flag, _mfs, data}, _gdef, _lookups, _isRTL, {glyphs, pos}) do
     # same as format 4, except "base" is another mark
@@ -427,6 +436,44 @@ defmodule OpenType.Positioning do
     {format, val}
   end
 
+  defp applyMarkToLig(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, prev, [], pos), do: {pos, prev}
+  defp applyMarkToLig(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [], [{g, gi} | glyphs], pos) do
+    applyMarkToLig(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi}], glyphs, pos)
+  end
+  defp applyMarkToLig(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, prev, [{g, gi} | glyphs], pos) do
+    skipMark = should_skip_glyph(g.glyph, lookupFlag, gdef, mfs)
+    markloc = findCoverageIndex(markCoverage, g.glyph)
+
+    # TODO: this code assumes prev is a lig
+    {base_glyph, prev_i} = if gdef != nil do
+      # find a base
+      base = Enum.find(prev, fn {x, _} -> classifyGlyph(x.glyph, gdef.classes) == 2 end)
+      # handle case where no lig anywhere in preceding characters
+      if base == nil, do: hd(prev), else: base
+    else
+      hd(prev)
+    end
+    baseloc = findCoverageIndex(baseCoverage, base_glyph.glyph)
+
+    {mark_offset, delta} = if markloc != nil and baseloc != nil and !skipMark and g.mLigComponent > 0 do
+      #IO.puts "LIG: ready to apply #{inspect g} to #{inspect base_glyph}"
+      b = Enum.at(baseArray, baseloc)
+      {class, {mark_x, mark_y}} = Enum.at(markArray, markloc)
+      base_anchors = Enum.at(b, g.mLigComponent - 1)
+      #IO.puts "LIG sel anchors: #{inspect base_anchors}"
+      {base_x, base_y} = Enum.at(base_anchors, class)
+      # align the anchors
+      {off_x, off_y} = {base_x - mark_x, base_y - mark_y}
+      index_delta = gi - prev_i
+      {{:pos, off_x, off_y, 0, 0}, -index_delta}
+    else
+      {Enum.at(pos, gi), 0}
+    end
+    updated = pos |> List.replace_at(gi, mark_offset)
+    g = if g.markDelta == 0, do: %{g | markDelta: delta}, else: g
+    applyMarkToLig(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi} | prev], glyphs, updated)
+  end
+
   defp applyMarkToBase(_markCoverage, _baseCoverage, _baseArray, _markArray, _lookupFlag, _mfs, _gdef, prev, [], pos), do: {pos, prev}
   defp applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [], [{g, gi} | glyphs], pos) do
     applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi}], glyphs, pos)
@@ -460,7 +507,6 @@ defmodule OpenType.Positioning do
       {Enum.at(pos, gi), 0}
     end
     updated = pos |> List.replace_at(gi, mark_offset)
-    # for now avoid overwriting
     g = if g.markDelta == 0, do: %{g | markDelta: delta}, else: g
     applyMarkToBase(markCoverage, baseCoverage, baseArray, markArray, lookupFlag, mfs, gdef, [{g, gi} | prev], glyphs, updated)
   end

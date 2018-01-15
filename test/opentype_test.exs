@@ -106,6 +106,17 @@ defmodule OpenTypeTest do
     #step 1: generate the ligature we'll position
     {glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0622\u0650")
     assert glyphs ==  [830,317,268]
-    IO.inspect pos
+    # without ligature positioning: hd(pos) == {:pos, 320, -378, 0, 0}
+    assert hd(pos) == {:pos, 300, -300, 0, 0}
+  end
+
+  test "mark to ligature with embedded mark" do
+    #ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
+
+    #step 1: generate the ligature we'll position
+    #{glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0650\u0622")
+    #assert glyphs ==  [830,317,268]
+    # without ligature positioning: hd(pos) == {:pos, 320, -378, 0, 0}
+    #assert hd(pos) == {:pos, 300, -300, 0, 0}
   end
 end

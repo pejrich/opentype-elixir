@@ -418,6 +418,7 @@ defmodule OpenType.Substitutions do
       # find first match in this ligature set (if any)
       lig = Enum.find(Enum.at(ligatures, coverloc), fn {_replacement, match} -> matchLigatureRule?(glyphs, match, flag, gdef, mfs) end)
       if lig != nil do
+        #IO.puts "LIG: Match #{inspect lig} for #{inspect g}"
         # replace the current glyph
         {rep, m} = lig
         # some kind of acc for skipped glyphs so they can be placed after ligature 
@@ -425,7 +426,7 @@ defmodule OpenType.Substitutions do
         # ie; skip marks
         matched = [g | glyphs]
                   |> lig_components(length(m)+1, flag, gdef, mfs)
-                  |> Stream.map(fn {g, _} -> g.components end)
+                  |> Stream.map(fn {x, _} -> x.codepoints end)
                   |> Enum.concat
 
         {_, n_total} = glyphs
@@ -435,22 +436,23 @@ defmodule OpenType.Substitutions do
 
         replacement = %{g | glyph: rep, codepoints: matched, isLigature: true}
         # skip over any matched glyphs
-        skipped = if n_total != length(m) do
+        {skipped, last_component} = if n_total != length(m) do
           IO.puts "LIG: Match #{length(m)} glyphs out of #{n_total}"
           # take n_total; if skipped set mComponent else increment compID
           # TODO: we should only set mLigComponent when is mark; need to review
-          {markss, _lastcompID} = glyphs
+          {markss, lastcompID} = glyphs
                    |> Stream.take(n_total)
                    |> Enum.map_reduce(1, fn (g, compID) -> if should_skip_glyph?(g.glyph, flag, gdef, mfs), do: { %{g | mLigComponent: compID}, compID}, else: {g, compID + 1} end)
-          markss |> Enum.take(&(should_skip_glyph?(&1.glyph, flag, gdef, mfs)))
+          {markss |> Enum.filter(&(should_skip_glyph?(&1.glyph, flag, gdef, mfs))), lastcompID}
         else
-          []
+        {[], length(m) + 1}
         end
         # probably want to prepend earlier ignored glyphs to remaining
-        remaining = Enum.slice(glyphs, n_total, length(glyphs))
-          # remaining - split_while isMark (marks, extra)
+        {rmarks, remaining} = Enum.slice(glyphs, n_total, length(glyphs))
+                    |> Enum.split_while(&(should_skip_glyph?(&1.glyph, flag, gdef, mfs)))
+        rmarks = rmarks |> Enum.map(fn m -> %{m | mLigComponent: last_component} end)
           # for remaining while mark set compID
-        {[replacement | output], skipped ++ remaining}
+        {[replacement | output], skipped ++ rmarks ++ remaining}
       else
         {[g | output], glyphs}
       end
