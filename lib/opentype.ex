@@ -257,6 +257,9 @@ defmodule OpenType do
 
   # given a script and language, get the appropriate features
   # (falling back as appropriate)
+  defp getFeatures([], _script, _lang) do
+    []
+  end
   defp getFeatures(scripts, script, lang) do
     # Fallback to "DFLT", "dflt", or "latn" script; else ignore all
     selected_script = scripts[script]  || scripts["DFLT"] || scripts["dflt"] || scripts["latn"] || %{}

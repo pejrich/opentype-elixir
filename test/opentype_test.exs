@@ -119,4 +119,12 @@ defmodule OpenTypeTest do
     # without ligature positioning: hd(pos) == {:pos, 320, -378, 0, 0}
     #assert hd(pos) == {:pos, 300, -300, 0, 0}
   end
+
+  # TODO: can't distribute Verdana so find OFL-licensed TTF file with same issue
+  #test "Verdana bug" do
+  #  ttf = OpenType.parse_file("./test/support/fonts/Verdana.ttf")
+  #  {g, p}  = OpenType.layout_text(ttf, "Hello")
+  #  assert g == [43, 72, 79, 79, 82]
+  #  assert p == [{:std_width, 0, 0, 1539, 0}, {:std_width, 0, 0, 1220, 0}, {:std_width, 0, 0, 562, 0}, {:std_width, 0, 0, 562, 0}, {:std_width, 0, 0, 1243, 0}]
+  #end
 end
