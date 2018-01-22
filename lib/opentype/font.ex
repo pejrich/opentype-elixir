@@ -40,15 +40,17 @@ defmodule OpenType.Font do
     parsed = OpenType.parse_file(filename)
     {:noreply, parsed}
   end
+
   def handle_call(:ttf, _from, ttf) do
     {:reply, ttf, ttf}
   end
+
   def handle_call(:scale, _from, ttf) do
     {:reply, 1000.0 / ttf.unitsPerEm, ttf}
   end
+
   def handle_call({:layout, text, features}, _from, ttf) do
     output = OpenType.layout_text(ttf, text, features)
     {:reply, output, ttf}
   end
 end
-

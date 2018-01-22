@@ -4,17 +4,24 @@ defmodule Opentype.Mixfile do
   @version "0.5.0"
 
   def project do
-    [app: :opentype,
-     name: "OpenType",
-     version: @version,
-     elixir: "~> 1.5",
-     build_embedded: Mix.env == :prod,
-     start_permanent: Mix.env == :prod,
-     test_coverage: [tool: ExCoveralls],
-     preferred_cli_env: ["coveralls": :test, "coveralls.detail": :test, "coveralls.post": :test, "coveralls.html": :test],
-     description: "Provides facilities for working with OpenType fonts.",
-     package: package(),
-     deps: deps()]
+    [
+      app: :opentype,
+      name: "OpenType",
+      version: @version,
+      elixir: "~> 1.5",
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test
+      ],
+      description: "Provides facilities for working with OpenType fonts.",
+      package: package(),
+      deps: deps()
+    ]
   end
 
   # Configuration for the OTP application
@@ -38,17 +45,18 @@ defmodule Opentype.Mixfile do
     [
       {:unicode_data, "~> 0.6.0"},
       {:excoveralls, "~> 0.7.5", only: :test},
-      {:ex_doc, "~> 0.18.1", only: :dev }
+      {:ex_doc, "~> 0.18.1", only: :dev}
     ]
   end
 
   defp package do
-    [licenses: ["Apache 2.0"],
-     name: "opentype",
-     maintainers: ["jbowtie/John C Barstow"],
-     links: %{
-       "GitHub" => "https://github.com/jbowtie/opentype-elixir",
-     }
+    [
+      licenses: ["Apache 2.0"],
+      name: "opentype",
+      maintainers: ["jbowtie/John C Barstow"],
+      links: %{
+        "GitHub" => "https://github.com/jbowtie/opentype-elixir"
+      }
     ]
   end
 end

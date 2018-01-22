@@ -41,8 +41,8 @@ defmodule OpenTypeTest do
     assert glyphs == [69, 243, 608, 74]
 
     # mark will position accent over the i
-    xpos = pos |> Enum.map(fn {_,x,_,_,_} -> x end)
-    xadv = pos |> Enum.map(fn {_,_,_,x,_} -> x end)
+    xpos = pos |> Enum.map(fn {_, x, _, _, _} -> x end)
+    xadv = pos |> Enum.map(fn {_, _, _, x, _} -> x end)
     # mark has an xOffset
     assert xpos == [0, 0, 317, 0]
     # mark has zero width
@@ -80,7 +80,7 @@ defmodule OpenTypeTest do
 
     {glyphs, _} = OpenType.layout_text(ttf, "\u0627\u06A9\u0642\u0644")
     # isol, init, medi, fina
-    assert glyphs ==  [16, 460, 249, 717, 227]
+    assert glyphs == [16, 460, 249, 717, 227]
   end
 
   test "Urdu cursive" do
@@ -90,41 +90,41 @@ defmodule OpenTypeTest do
     assert s == "arab"
 
     {glyphs, _pos} = OpenType.layout_text(ttf, "\u062D\u062D\u062D\u062D\u062D\u062D\u0628")
-    assert glyphs ==  [230, 591, 591, 591, 591, 591, 18, 523]
+    assert glyphs == [230, 591, 591, 591, 591, 591, 18, 523]
   end
 
   test "Exercise GSUB 8 (reverse contextual chaining)" do
     ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
 
     {glyphs, _pos} = OpenType.layout_text(ttf, "\u0630\u0698 \u0621\u0647")
-    assert glyphs ==  [304, 248, 7, 277, 269]
+    assert glyphs == [304, 248, 7, 277, 269]
   end
 
   test "Exercise GPOS 5 (mark to ligature)" do
     ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
 
-    #step 1: generate the ligature we'll position
+    # step 1: generate the ligature we'll position
     {glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0622\u0650")
-    assert glyphs ==  [830,317,268]
+    assert glyphs == [830, 317, 268]
     # without ligature positioning: hd(pos) == {:pos, 320, -378, 0, 0}
     assert hd(pos) == {:pos, 300, -300, 0, 0}
   end
 
   test "mark to ligature with embedded mark" do
-    #ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
+    # ttf = OpenType.parse_file("./test/support/fonts/UrdType.ttf")
 
-    #step 1: generate the ligature we'll position
-    #{glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0650\u0622")
-    #assert glyphs ==  [830,317,268]
+    # step 1: generate the ligature we'll position
+    # {glyphs, pos} = OpenType.layout_text(ttf, "\u0630\u0644\u0650\u0622")
+    # assert glyphs ==  [830,317,268]
     # without ligature positioning: hd(pos) == {:pos, 320, -378, 0, 0}
-    #assert hd(pos) == {:pos, 300, -300, 0, 0}
+    # assert hd(pos) == {:pos, 300, -300, 0, 0}
   end
 
   # TODO: can't distribute Verdana so find OFL-licensed TTF file with same issue
-  #test "Verdana bug" do
+  # test "Verdana bug" do
   #  ttf = OpenType.parse_file("./test/support/fonts/Verdana.ttf")
   #  {g, p}  = OpenType.layout_text(ttf, "Hello")
   #  assert g == [43, 72, 79, 79, 82]
   #  assert p == [{:std_width, 0, 0, 1539, 0}, {:std_width, 0, 0, 1220, 0}, {:std_width, 0, 0, 562, 0}, {:std_width, 0, 0, 562, 0}, {:std_width, 0, 0, 1243, 0}]
-  #end
+  # end
 end

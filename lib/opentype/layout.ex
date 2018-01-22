@@ -2,16 +2,19 @@ defmodule OpenType.Layout do
   alias UnicodeData
 
   def detect_script(text) do
-    x = String.codepoints(text)
-    |> Stream.map(&UnicodeData.script_from_codepoint(&1))
-    |> Stream.filter(fn x -> !(x in ["Common", "Inherited", "Unknown"]) end)
-    |> Enum.to_list
+    x =
+      String.codepoints(text)
+      |> Stream.map(&UnicodeData.script_from_codepoint(&1))
+      |> Stream.filter(fn x -> !(x in ["Common", "Inherited", "Unknown"]) end)
+      |> Enum.to_list()
+
     script = if x == [], do: "Unknown", else: hd(x)
     UnicodeData.script_to_tag(script)
   end
 
   def join_type(cp) do
     join_group = UnicodeData.joining_group(cp)
+
     if join_group in ["ALAPH", "DALETH RISH"] do
       join_group
     else
@@ -47,73 +50,88 @@ defmodule OpenType.Layout do
 
   # case B: previous is DALATH RISH
   def arabic_shaping([type | types], "DALATH RISH", [prev | output]) do
-    curr = case type do
-      "U" -> nil
-      "ALAPH" -> "fin3"
-      _ -> "isol"
-    end
+    curr =
+      case type do
+        "U" -> nil
+        "ALAPH" -> "fin3"
+        _ -> "isol"
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
   # case C: previous is R
   def arabic_shaping([type | types], "R", [prev | output]) do
-    curr = case type do
-      "U" -> nil
-      "ALAPH" -> "fin2"
-      _ -> "isol"
-    end
+    curr =
+      case type do
+        "U" -> nil
+        "ALAPH" -> "fin2"
+        _ -> "isol"
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
   # case C.2: previous is ALAPH in isol form
   def arabic_shaping([type | types], "ALAPH", ["isol" | output]) do
-    curr = case type do
-      "U" -> nil
-      "ALAPH" -> "fin2"
-      _ -> "isol"
-    end
+    curr =
+      case type do
+        "U" -> nil
+        "ALAPH" -> "fin2"
+        _ -> "isol"
+      end
+
     arabic_shaping(types, type, [curr, "isol" | output])
   end
 
   # case D: previous is ALAPH in fina form
   def arabic_shaping([type | types], "ALAPH", ["fina" | output]) do
-    {prev, curr} = case type do
-      "U" -> {"fina", nil}
-      "L" -> {"fina", "isol"}
-      "ALAPH" -> {"med2", "fin2"}
-      _ -> {"med2", "isol"}
-    end
+    {prev, curr} =
+      case type do
+        "U" -> {"fina", nil}
+        "L" -> {"fina", "isol"}
+        "ALAPH" -> {"med2", "fin2"}
+        _ -> {"med2", "isol"}
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
   # case E: previous is D or C in fina form
   def arabic_shaping([type | types], prev_type, ["fina" | output]) when prev_type in ["D", "C"] do
-    {prev, curr} = case type do
-      "U" -> {"fina", nil}
-      "L" -> {"fina", "isol"}
-      _ -> {"medi", "fina"}
-    end
+    {prev, curr} =
+      case type do
+        "U" -> {"fina", nil}
+        "L" -> {"fina", "isol"}
+        _ -> {"medi", "fina"}
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
   # case F: previous is D, C, or L in isol form
-  def arabic_shaping([type | types], prev_type, ["isol" | output]) when prev_type in ["D", "C", "L"] do
-    {prev, curr} = case type do
-      "U" -> {"isol", nil}
-      "L" -> {"isol", "isol"}
-      _ -> {"init", "fina"}
-    end
+  def arabic_shaping([type | types], prev_type, ["isol" | output])
+      when prev_type in ["D", "C", "L"] do
+    {prev, curr} =
+      case type do
+        "U" -> {"isol", nil}
+        "L" -> {"isol", "isol"}
+        _ -> {"init", "fina"}
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
   # case G: previous is ALAPH in fin2/fin3 form
   def arabic_shaping([type | types], "ALAPH", [prev | output]) when prev in ["fin2", "fin3"] do
-    {prev, curr} = case type do
-      "U" -> {prev, nil}
-      "L" -> {prev, "isol"}
-      "ALAPH" -> {"isol", "fin2"}
-      _ -> {"isol", "isol"}
-    end
+    {prev, curr} =
+      case type do
+        "U" -> {prev, nil}
+        "L" -> {prev, "isol"}
+        "ALAPH" -> {"isol", "fin2"}
+        _ -> {"isol", "isol"}
+      end
+
     arabic_shaping(types, type, [curr, prev | output])
   end
 
@@ -131,24 +149,28 @@ defmodule OpenType.Layout do
   # shape arabic and other cursive scripts
   # arabic, mongolian, syriac, n'ko, phags pa,
   # mandiac, manichaean, psalter pahlavi
-  def shape_glyphs(script, glyphs) when script in ["arab", "mong", "syrc", "nko ", "phag", "mand", "mani", "phlp"] do
+  def shape_glyphs(script, glyphs)
+      when script in ["arab", "mong", "syrc", "nko ", "phag", "mand", "mani", "phlp"] do
     features = ["isol", "medi", "init", "fina", "med2", "fin2", "fin3"]
 
     # look up shaping types
-    x = glyphs
-        |> Stream.map(fn g -> hd(g.codepoints) end)
-        |> Stream.map(&join_type(&1))
-        |> Enum.to_list
+    x =
+      glyphs
+      |> Stream.map(fn g -> hd(g.codepoints) end)
+      |> Stream.map(&join_type(&1))
+      |> Enum.to_list()
 
     # record the locations of transparent (do not affect joining)
-    glyphs_T = x
-               |> Enum.with_index
-               |> Enum.filter(fn {n, _} -> n == "T" end)
-               |> Enum.map(fn {"T", i} -> i end)
+    glyphs_T =
+      x
+      |> Enum.with_index()
+      |> Enum.filter(fn {n, _} -> n == "T" end)
+      |> Enum.map(fn {"T", i} -> i end)
 
     # remove the transparent glyphs
-    trimmed = x
-              |> Enum.filter(fn n -> n != "T" end)
+    trimmed =
+      x
+      |> Enum.filter(fn n -> n != "T" end)
 
     # do the shaping
     shaped = arabic_shaping(trimmed, nil, [])
