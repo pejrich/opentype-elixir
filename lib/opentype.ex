@@ -53,8 +53,7 @@ defmodule OpenType do
   For a font collection, it returns only the first font in the collection.
   """
   def parse_file(filename) do
-    f = File.open!(filename)
-    data = IO.binread(f, :all)
+    data = File.read!(filename)
     new() |> parse(data)
   end
 
