@@ -46,7 +46,7 @@ defmodule OpenType.Font do
   end
 
   def handle_call(:scale, _from, ttf) do
-    {:reply, 1000.0 / ttf.unitsPerEm, ttf}
+    {:reply, 1000.0 / ttf.units_per_em, ttf}
   end
 
   def handle_call({:layout, text, features}, _from, ttf) do

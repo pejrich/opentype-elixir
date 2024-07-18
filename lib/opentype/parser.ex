@@ -4,44 +4,45 @@ defmodule OpenType.Parser do
   require Logger
 
   # extract the TTF (or TTC) version
-  def extractVersion(ttf, <<version::size(32), data::binary>>) do
+  def extract_version(ttf, <<version::size(32), data::binary>>) do
     {%{ttf | :version => version}, data}
   end
 
   # read in the font header
-  def readHeader({%{version: v} = ttf, data}, _full)
+  def read_header({%{version: v} = ttf, data}, _full)
       when v in [0x00010000, 0x74727565, 0x4F54544F] do
-    <<numTables::16, _searchRange::16, _entrySelector::16, _rangeShift::16, remainder::binary>> =
+    <<num_tables::16, _search_range::16, _entry_selector::16, _range_shift::16,
+      remainder::binary>> =
       data
 
-    tables = readTables(remainder, numTables)
-    isCFF = Enum.any?(tables, fn x -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :isCFF => isCFF}
+    tables = read_tables(remainder, num_tables)
+    is_cff = Enum.any?(tables, fn x -> x.name == "CFF " end)
+    %{ttf | :tables => tables, :is_cff => is_cff}
   end
 
-  def readHeader({%{version: 0x74727566} = ttf, data}, full_data) do
+  def read_header({%{version: 0x74727566} = ttf, data}, full_data) do
     # TODO: read in TTC header info, subfont 0
-    <<_ttcVersion::32, numSubfonts::32, rem::binary>> = data
+    <<_ttc_version::32, num_subfonts::32, rem::binary>> = data
     # read in 32-bit subfont offsets
-    {offsets, _remaining} = readOffset([], rem, numSubfonts)
+    {offsets, _remaining} = read_offset([], rem, num_subfonts)
     subfont = subtable(full_data, offsets[0])
 
-    <<_ttfVersion::32, numTables::16, _searchRange::16, _entrySelector::size(16),
-      _rangeShift::size(16), remainder::binary>> = subfont
+    <<_ttf_version::32, num_tables::16, _search_range::16, _entry_selector::size(16),
+      _range_shift::size(16), remainder::binary>> = subfont
 
-    # IO.puts "Subfont 0 has #{numTables} tables"
-    tables = readTables(remainder, numTables)
-    isCFF = Enum.any?(tables, fn x -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :isCFF => isCFF}
+    # IO.puts "Subfont 0 has #{num_tables} tables"
+    tables = read_tables(remainder, num_tables)
+    is_cff = Enum.any?(tables, fn x -> x.name == "CFF " end)
+    %{ttf | :tables => tables, :is_cff => is_cff}
   end
 
-  def readHeader({ttf, _data}, _) do
+  def read_header({ttf, _data}, _) do
     Logger.error("Unknown font format version")
     ttf
   end
 
   # raw data for a given table
-  def rawTable(ttf, name, data) do
+  def raw_table(ttf, name, data) do
     t = Enum.find(ttf.tables, fn x -> x.name == name end)
 
     cond do
@@ -51,7 +52,7 @@ defmodule OpenType.Parser do
   end
 
   # lookup a table by name
-  def lookupTable(ttf, name) do
+  def lookup_table(ttf, name) do
     t = Enum.find(ttf.tables, fn x -> x.name == name end)
 
     cond do
@@ -61,7 +62,7 @@ defmodule OpenType.Parser do
   end
 
   # is there a particular font table?
-  def hasTable?(ttf, name) do
+  def has_table?(ttf, name) do
     Enum.any?(ttf.tables, fn x -> x.name == name end)
   end
 
@@ -71,18 +72,18 @@ defmodule OpenType.Parser do
   end
 
   # read in the name table and select a name
-  def extractName(ttf, data) do
-    raw = rawTable(ttf, "name", data)
+  def extract_name(ttf, data) do
+    raw = raw_table(ttf, "name", data)
 
     if raw do
-      <<_fmt::16, nRecords::16, strOffset::16, r::binary>> = raw
+      <<_fmt::16, n_records::16, str_offset::16, r::binary>> = raw
       # IO.puts "Name table format #{fmt}"
-      recs = readNameRecords([], r, nRecords)
+      recs = read_name_records([], r, n_records)
       # pick best supported platform/encoding
       selected =
         recs
         |> Enum.map(fn r -> {r.platform, r.encoding} end)
-        |> findPreferredEncoding
+        |> find_preferred_encoding
 
       recs =
         if selected != nil do
@@ -92,7 +93,7 @@ defmodule OpenType.Parser do
         end
 
       # and just parse that one
-      names = Enum.map(recs, fn r -> recordToName(r, strOffset, raw) end)
+      names = Enum.map(recs, fn r -> record_to_name(r, str_offset, raw) end)
       # prefer PS name
       name6 =
         case Enum.find(names, fn {id, _} -> id == 6 end) do
@@ -112,7 +113,7 @@ defmodule OpenType.Parser do
           _ -> nil
         end
 
-      psName =
+      ps_name =
         cond do
           name6 -> name6
           name4 -> name4
@@ -120,12 +121,12 @@ defmodule OpenType.Parser do
           true -> "NO-VALID-NAME"
         end
 
-      # replace spaces in psName with dashes
-      # self.familyName = names[1] or psName
-      # self.styleName = names[2] or 'Regular'
-      # self.fullName = names[4] or psName
-      # self.uniqueFontID = names[3] or psName
-      %{ttf | name: psName}
+      # replace spaces in ps_name with dashes
+      # self.family_name = names[1] or ps_name
+      # self.style_name = names[2] or 'Regular'
+      # self.full_name = names[4] or ps_name
+      # self.unique_font_id = names[3] or ps_name
+      %{ttf | name: ps_name}
     else
       %{ttf | name: "NO-VALID-NAME"}
     end
@@ -137,67 +138,67 @@ defmodule OpenType.Parser do
   end
 
   # read in the font tables
-  def readTables(data, numTables) do
+  def read_tables(data, num_tables) do
     # each table definition is 16 bytes
-    tableDefs = binary_part(data, 0, numTables * 16)
+    table_defs = binary_part(data, 0, num_tables * 16)
 
-    for <<(<<tag::binary-size(4), checksum::32, offset::32, length::32>> <- tableDefs)>>,
+    for <<(<<tag::binary-size(4), checksum::32, offset::32, length::32>> <- table_defs)>>,
       do: %FontTable{name: tag, checksum: checksum, offset: offset, length: length}
   end
 
-  defp readOffset(offsets, data, 0), do: {offsets, data}
+  defp read_offset(offsets, data, 0), do: {offsets, data}
 
-  defp readOffset(offsets, <<offset::32, rem::binary>>, count) do
-    readOffset([offset | offsets], rem, count - 1)
+  defp read_offset(offsets, <<offset::32, rem::binary>>, count) do
+    read_offset([offset | offsets], rem, count - 1)
   end
 
-  defp readNameRecords(recs, _data, 0), do: recs
+  defp read_name_records(recs, _data, 0), do: recs
 
-  defp readNameRecords(recs, data, nRecs) do
-    <<platform::16, encoding::16, language::16, nameID::16, length::16, offset::16,
+  defp read_name_records(recs, data, n_recs) do
+    <<platform::16, encoding::16, language::16, name_id::16, length::16, offset::16,
       remaining::binary>> = data
 
     r = %{
       platform: platform,
       encoding: encoding,
       lang: language,
-      nameID: nameID,
+      name_id: name_id,
       length: length,
       offset: offset
     }
 
-    readNameRecords([r | recs], remaining, nRecs - 1)
+    read_name_records([r | recs], remaining, n_recs - 1)
   end
 
   # Platform 3 (Windows) -- encoding 1 (UCS-2) and 10 (UCS-4)
-  defp recordToName(%{platform: 3} = record, offset, data) do
-    readUTF16Name(record, offset, data)
+  defp record_to_name(%{platform: 3} = record, offset, data) do
+    read_utf16_name(record, offset, data)
   end
 
   # Platform 0 (Unicode)
-  defp recordToName(%{platform: 0} = record, offset, data) do
-    readUTF16Name(record, offset, data)
+  defp record_to_name(%{platform: 0} = record, offset, data) do
+    read_utf16_name(record, offset, data)
   end
 
   # Platform 2 (deprecated; identical to platform 0)
-  defp recordToName(%{platform: 2, encoding: 1} = record, offset, data) do
-    readUTF16Name(record, offset, data)
+  defp record_to_name(%{platform: 2, encoding: 1} = record, offset, data) do
+    read_utf16_name(record, offset, data)
   end
 
   # ASCII(UTF-8) for most platform/encodings
-  defp recordToName(record, offset, data) do
+  defp record_to_name(record, offset, data) do
     raw = binary_part(data, record.offset + offset, record.length)
-    {record.nameID, to_string(raw)}
+    {record.name_id, to_string(raw)}
   end
 
   # handle the unicode (UTF-16BE) names
-  defp readUTF16Name(record, offset, data) do
+  defp read_utf16_name(record, offset, data) do
     raw = binary_part(data, record.offset + offset, record.length)
     chars = :unicode.characters_to_list(raw, {:utf16, :big})
-    {record.nameID, to_string(chars)}
+    {record.name_id, to_string(chars)}
   end
 
-  def findPreferredEncoding(candidates) do
+  def find_preferred_encoding(candidates) do
     # Select a Unicode CMAP by preference
     preferred = [
       # 32-bit Unicode formats
@@ -217,56 +218,56 @@ defmodule OpenType.Parser do
     preferred |> Enum.find(fn {plat, enc} -> {plat, enc} in candidates end)
   end
 
-  def extractMetrics(ttf, data) do
+  def extract_metrics(ttf, data) do
     _ = """
     *flags        Font flags
     *ascent       Typographic ascender in 1/1000ths of a point
     *descent      Typographic descender in 1/1000ths of a point
-    *capHeight    Cap height in 1/1000ths of a point (0 if not available)
+    *cap_height    Cap height in 1/1000ths of a point (0 if not available)
     *bbox         Glyph bounding box [l,t,r,b] in 1/1000ths of a point
-    *unitsPerEm   Glyph units per em
-    *italicAngle  Italic angle in degrees ccw
-    *stemV        stem weight in 1/1000ths of a point (approximate)
+    *units_per_em   Glyph units per em
+    *italic_angle  Italic angle in degrees ccw
+    *stem_v        stem weight in 1/1000ths of a point (approximate)
 
-    defaultWidth   default glyph width in 1/1000ths of a point
-    charWidths     dictionary of character widths for every supported UCS character
+    default_width   default glyph width in 1/1000ths of a point
+    char_widths     dictionary of character widths for every supported UCS character
     code
     """
 
-    raw_head = rawTable(ttf, "head", data)
+    raw_head = raw_table(ttf, "head", data)
 
-    {bbox, unitsPerEm} =
+    {bbox, units_per_em} =
       if raw_head do
-        <<_major::16, _minor::16, _rev::32, _checksumAdj::32, 0x5F, 0x0F, 0x3C, 0xF5, _flags::16,
-          unitsPerEm::16, _created::signed-64, _modified::signed-64, minx::signed-16,
-          miny::signed-16, maxx::signed-16, maxy::signed-16, _macStyle::16, _lowestPPEM::16,
-          _fontDirectionHint::signed-16, _glyphMappingFmt::signed-16,
-          _glyphDataFmt::signed-16>> = raw_head
+        <<_major::16, _minor::16, _rev::32, _checksum_adj::32, 0x5F, 0x0F, 0x3C, 0xF5, _flags::16,
+          units_per_em::16, _created::signed-64, _modified::signed-64, minx::signed-16,
+          miny::signed-16, maxx::signed-16, maxy::signed-16, _mac_style::16, _lowest_ppem::16,
+          _font_direction_hint::signed-16, _glyph_mapping_fmt::signed-16,
+          _glyph_data_fmt::signed-16>> = raw_head
 
-        {[minx, miny, maxx, maxy], unitsPerEm}
+        {[minx, miny, maxx, maxy], units_per_em}
       else
         {[-100, -100, 100, 100], 1000}
       end
 
-    raw_os2 = rawTable(ttf, "OS/2", data)
+    raw_os2 = raw_table(ttf, "OS/2", data)
 
     measured =
       if raw_os2 do
         # https://www.microsoft.com/typography/otspec/os2.htm
         # match version 0 struct, extract additional fields as needed
-        # usWidthClass = Condensed < Normal < Expanded
-        # fsType = flags that control embedding
+        # us_width_class = Condensed < Normal < Expanded
+        # fs_type = flags that control embedding
         # unicode range 1-4 are bitflags that identify charsets
-        # selFlags = italic, underscore, bold, strikeout, outlined...
-        # TODO: conform to fsType restrictions
-        <<os2ver::16, _avgCharWidth::signed-16, usWeightClass::16, _usWidthClass::16, _fsType::16,
-          _subXSize::signed-16, _subYSize::signed-16, _subXOffset::signed-16,
-          _subYOffset::signed-16, _superXSize::signed-16, _superYSize::signed-16,
-          _superXOffset::signed-16, _superYOffset::signed-16, _strikeoutSize::signed-16,
-          _strikeoutPos::signed-16, familyClass::signed-16, _panose::80, _unicodeRange1::32,
-          _unicodeRange2::32, _unicodeRange3::32, _unicodeRange4::32, _vendorID::32,
-          _selFlags::16, _firstChar::16, _lastChar::16, typoAscend::signed-16,
-          typoDescend::signed-16, _typoLineGap::signed-16, _winAscent::16, _winDescent::16,
+        # sel_flags = italic, underscore, bold, strikeout, outlined...
+        # TODO: conform to fs_type restrictions
+        <<os2ver::16, _avg_char_width::signed-16, us_weight_class::16, _us_width_class::16,
+          _fs_type::16, _sub_x_size::signed-16, _sub_y_size::signed-16, _sub_x_offset::signed-16,
+          _sub_y_offset::signed-16, _super_x_size::signed-16, _super_y_size::signed-16,
+          _super_x_offset::signed-16, _super_y_offset::signed-16, _strikeout_size::signed-16,
+          _strikeout_pos::signed-16, family_class::signed-16, _panose::80, _unicode_range1::32,
+          _unicode_range2::32, _unicode_range3::32, _unicode_range4::32, _vendor_id::32,
+          _sel_flags::16, _first_char::16, _last_char::16, typo_ascend::signed-16,
+          typo_descend::signed-16, _typo_line_gap::signed-16, _win_ascent::16, _win_descent::16,
           v0rest::binary>> = raw_os2
 
         Logger.debug("OS/2 ver #{os2ver} found")
@@ -281,28 +282,38 @@ defmodule OpenType.Parser do
           end
 
         # if we have a v2 or higher struct we can read out
-        # the xHeight and capHeight
-        capHeight =
-          if os2ver > 1 and v1rest do
-            <<_xHeight::signed-16, capHeight::signed-16, _defaultChar::16, _breakChar::16,
-              _maxContext::16, _v2rest::binary>> = v1rest
+        # the x_height and cap_height
+        if os2ver > 1 and v1rest do
+          <<x_height::signed-16, cap_height::signed-16, default_char::16, break_char::16,
+            max_content::16, _v2rest::binary>> = v1rest
 
-            capHeight
-          else
-            0.7 * unitsPerEm
-          end
+          %{
+            ttf
+            | ascent: typo_ascend,
+              descent: typo_descend,
+              cap_height: cap_height,
+              max_content: max_content,
+              break_char: break_char,
+              default_char: default_char,
+              x_height: x_height,
+              us_weight_class: us_weight_class,
+              family_class: family_class
+          }
+        else
+          cap_height = 0.7 * units_per_em
+
+          %{
+            ttf
+            | ascent: typo_ascend,
+              descent: typo_descend,
+              cap_height: cap_height,
+              us_weight_class: us_weight_class,
+              family_class: family_class
+          }
+        end
 
         # for osver > 4 also fields:
-        # lowerOpticalPointSize::16, upperOpticalPointSize::16
-
-        %{
-          ttf
-          | ascent: typoAscend,
-            descent: typoDescend,
-            capHeight: capHeight,
-            usWeightClass: usWeightClass,
-            familyClass: familyClass
-        }
+        # lower_optical_point_size::16, upper_optical_point_size::16
       else
         Logger.debug("No OS/2 info, synthetic data")
 
@@ -310,100 +321,110 @@ defmodule OpenType.Parser do
           ttf
           | ascent: Enum.at(bbox, 3),
             descent: Enum.at(bbox, 1),
-            capHeight: Enum.at(bbox, 3),
-            usWeightClass: 500
+            cap_height: Enum.at(bbox, 3),
+            us_weight_class: 500
         }
       end
 
-    # There's no way to get stemV from a TTF file short of analyzing actual outline data
+    # There's no way to get stem_v from a TTF file short of analyzing actual outline data
     # This fuzzy formula is taken from pdflib sources, but we could just use 0 here
-    stemV = 50 + trunc(measured.usWeightClass / 65.0 * (measured.usWeightClass / 65.0))
+    stem_v = 50 + trunc(measured.us_weight_class / 65.0 * (measured.us_weight_class / 65.0))
 
-    extractMoreMetrics(%{measured | bbox: bbox, unitsPerEm: unitsPerEm, stemV: stemV}, data)
+    [min_x, min_y, max_x, max_y] = bbox
+
+    measured = %{
+      measured
+      | bbox: %{measured.bbox | min_x: min_x, min_y: min_y, max_x: max_x, max_y: max_y}
+    }
+
+    extract_more_metrics(
+      %{measured | units_per_em: units_per_em, stem_v: stem_v},
+      data
+    )
   end
 
-  defp extractMoreMetrics(ttf, data) do
+  defp extract_more_metrics(ttf, data) do
     # TODO: these should be const enum somewhere
-    flagFIXED = 0b0001
-    flagSERIF = 0b0010
-    flagSYMBOLIC = 0b0100
-    flagSCRIPT = 0b1000
-    flagITALIC = 0b1000000
-    # flagALLCAPS = 1 <<< 16
-    # flagSMALLCAPS = 1 <<< 17
-    flagFORCEBOLD = 1 <<< 18
+    flag_fixed = 0b0001
+    flag_serif = 0b0010
+    flag_symbolic = 0b0100
+    flag_script = 0b1000
+    flag_italic = 0b1000000
+    # flag_allcaps = 1 <<< 16
+    # flag_smallcaps = 1 <<< 17
+    flag_forcebold = 1 <<< 18
 
     # flags, italic angle, default width
-    raw_post = rawTable(ttf, "post", data)
+    raw_post = raw_table(ttf, "post", data)
 
     {itals, fixed, forcebold, italic_angle} =
       if raw_post do
-        <<_verMajor::16, _verMinor::16, italicMantissa::signed-16, italicFraction::16,
-          _underlinePosition::signed-16, _underlineThickness::signed-16, isFixedPitch::32,
+        <<_ver_major::16, _ver_minor::16, italic_mantissa::signed-16, italic_fraction::16,
+          _underline_position::signed-16, _underline_thickness::signed-16, is_fixed_pitch::32,
           _rest::binary>> = raw_post
 
         # this is F2DOT14 format defined in OpenType standard
-        italic_angle = italicMantissa + italicFraction / 16384.0
+        italic_angle = italic_mantissa + italic_fraction / 16384.0
 
         # if SEMIBOLD or heavier, set forcebold flag
-        forcebold = if ttf.usWeightClass >= 600, do: flagFORCEBOLD, else: 0
+        forcebold = if ttf.us_weight_class >= 600, do: flag_forcebold, else: 0
 
         # a non-zero angle sets the italic flag
-        itals = if italic_angle != 0, do: flagITALIC, else: 0
+        itals = if italic_angle != 0, do: flag_italic, else: 0
 
         # mark it fixed pitch if needed
-        fixed = if isFixedPitch > 0, do: flagFIXED, else: 0
+        fixed = if is_fixed_pitch > 0, do: flag_fixed, else: 0
         {itals, fixed, forcebold, italic_angle}
       else
         {0, 0, 0, 0}
       end
 
-    # SERIF and SCRIPT can be derived from sFamilyClass in OS/2 table
-    class = ttf.familyClass >>> 8
-    serif = if Enum.member?(1..7, class), do: flagSERIF, else: 0
-    script = if class == 10, do: flagSCRIPT, else: 0
-    flags = flagSYMBOLIC ||| itals ||| forcebold ||| fixed ||| serif ||| script
+    # SERIF and SCRIPT can be derived from s_family_class in OS/2 table
+    class = ttf.family_class >>> 8
+    serif = if Enum.member?(1..7, class), do: flag_serif, else: 0
+    script = if class == 10, do: flag_script, else: 0
+    flags = flag_symbolic ||| itals ||| forcebold ||| fixed ||| serif ||| script
 
     # hhea
-    raw_hhea = rawTable(ttf, "hhea", data)
+    raw_hhea = raw_table(ttf, "hhea", data)
 
     if raw_hhea do
-      <<_verMajor::16, _verMinor::16, _ascender::signed-16, _descender::signed-16,
-        _linegap::signed-16, _advanceWidthMax::16, _minLeftBearing::signed-16,
-        _minRightBearing::signed-16, _xMaxExtent::signed-16, _caretSlopeRise::16,
-        _caretSlopeRun::16, _caretOffset::signed-16, _reserved::64, _metricDataFormat::signed-16,
-        numMetrics::16>> = raw_hhea
+      <<_ver_major::16, _ver_minor::16, _ascender::signed-16, _descender::signed-16,
+        _linegap::signed-16, _advance_width_max::16, _min_left_bearing::signed-16,
+        _min_right_bearing::signed-16, _x_max_extent::signed-16, _caret_slope_rise::16,
+        _caret_slope_run::16, _caret_offset::signed-16, _reserved::64,
+        _metric_data_format::signed-16, num_metrics::16>> = raw_hhea
 
       # maxp
       # number of glyphs -- will need to subset if more than 255
       # hmtx (glyph widths)
-      raw_hmtx = rawTable(ttf, "hmtx", data)
-      range = 1..numMetrics
-      gw = Enum.map(range, fn x -> getGlyphWidth(raw_hmtx, x - 1) end)
+      raw_hmtx = raw_table(ttf, "hmtx", data)
+      range = 1..num_metrics
+      gw = Enum.map(range, fn x -> get_glyph_width(raw_hmtx, x - 1) end)
 
       %{
         ttf
-        | italicAngle: italic_angle,
+        | italic_angle: italic_angle,
           flags: flags,
-          glyphWidths: gw,
-          defaultWidth: Enum.at(gw, 0)
+          glyph_widths: gw,
+          default_width: Enum.at(gw, 0)
       }
     else
       ttf
     end
   end
 
-  defp getGlyphWidth(hmtx, index) do
+  defp get_glyph_width(hmtx, index) do
     <<width::16>> = binary_part(hmtx, index * 4, 2)
     width
   end
 
   # mark what portion of the font is embedded
   # this may get more complex when we do proper subsetting
-  def markEmbeddedPart(ttf, data) do
+  def mark_embedded_part(ttf, data) do
     embedded =
-      if ttf.isCFF do
-        # rawTable(ttf, "CFF ", data)
+      if ttf.is_cff do
+        # raw_table(ttf, "CFF ", data)
         data
       else
         data
@@ -413,20 +434,20 @@ defmodule OpenType.Parser do
   end
 
   # cmap header
-  def extractCMap(ttf, data) do
-    raw_cmap = rawTable(ttf, "cmap", data)
+  def extract_c_map(ttf, data) do
+    raw_cmap = raw_table(ttf, "cmap", data)
 
     if raw_cmap do
-      # version, numTables
+      # version, num_tables
       <<_version::16, numtables::16, cmaptables::binary>> = raw_cmap
       # read in tableoffsets (plat, enc, offset)
-      {cmapoffsets, _cmapdata} = readCMapOffsets([], cmaptables, numtables)
+      {cmapoffsets, _cmapdata} = read_c_map_offsets([], cmaptables, numtables)
 
       # find the best available format
       selected =
         cmapoffsets
         |> Enum.map(fn {plat, enc, _} -> {plat, enc} end)
-        |> findPreferredEncoding
+        |> find_preferred_encoding
 
       # if we found a preferred format, locate it
       {plat, enc, off} =
@@ -438,9 +459,9 @@ defmodule OpenType.Parser do
         end
 
       # we need the table's offset and length to find subtables
-      {raw_off, raw_len} = lookupTable(ttf, "cmap")
+      {raw_off, raw_len} = lookup_table(ttf, "cmap")
       raw_cmap = binary_part(data, raw_off + off, raw_len - off)
-      cid2gid = readCMapData(plat, enc, raw_cmap, %{})
+      cid2gid = read_c_map_data(plat, enc, raw_cmap, %{})
 
       # reverse the lookup as naive ToUnicode map
       gid2cid = Enum.map(cid2gid, fn {k, v} -> {v, k} end) |> Map.new()
@@ -451,40 +472,40 @@ defmodule OpenType.Parser do
   end
 
   # read in the platform, encoding, offset triplets
-  defp readCMapOffsets(tables, data, 0) do
+  defp read_c_map_offsets(tables, data, 0) do
     {tables, data}
   end
 
-  defp readCMapOffsets(tables, data, nTables) do
+  defp read_c_map_offsets(tables, data, n_tables) do
     <<platform::16, encoding::16, offset::32, remaining::binary>> = data
     t = {platform, encoding, offset}
-    readCMapOffsets([t | tables], remaining, nTables - 1)
+    read_c_map_offsets([t | tables], remaining, n_tables - 1)
   end
 
   # read CMap format 4 (5.2.1.3.3: Segment mapping to delta values)
   # this is the most useful one for the majority of modern fonts
   # used for Windows Unicode mappings (platform 3 encoding 1) for BMP
-  defp readCMapData(
+  defp read_c_map_data(
          _platform,
          _encoding,
          <<4::16, _length::16, _lang::16, subdata::binary>>,
          cmap
        ) do
-    <<doubleSegments::16, _searchRange::16, _entrySelector::16, _rangeShift::16,
+    <<double_segments::16, _search_range::16, _entry_selector::16, _range_shift::16,
       segments::binary>> = subdata
 
     # IO.puts "READ UNICODE TABLE #{platform} #{encoding}"
-    segmentCount = div(doubleSegments, 2)
+    segment_count = div(double_segments, 2)
     # segment end values
-    {endcodes, ecDone} = readSegmentData([], segments, segmentCount)
+    {endcodes, ec_done} = read_segment_data([], segments, segment_count)
     # reserved::16
-    <<_reserved::16, skipRes::binary>> = ecDone
+    <<_reserved::16, skip_res::binary>> = ec_done
     # segment start values
-    {startcodes, startDone} = readSegmentData([], skipRes, segmentCount)
+    {startcodes, start_done} = read_segment_data([], skip_res, segment_count)
     # segment delta values
-    {deltas, deltaDone} = readSignedSegmentData([], startDone, segmentCount)
+    {deltas, delta_done} = read_signed_segment_data([], start_done, segment_count)
     # segment range offset values
-    {offsets, _glyphData} = readSegmentData([], deltaDone, segmentCount)
+    {offsets, _glyph_data} = read_segment_data([], delta_done, segment_count)
     # combine the segment data we've read in
     segs =
       List.zip([startcodes, endcodes, deltas, offsets])
@@ -494,31 +515,31 @@ defmodule OpenType.Parser do
     # TODO: also generate glyph-to-character map
     segs
     |> Enum.with_index()
-    |> Enum.reduce(%{}, fn {x, index}, acc -> mapSegment(x, acc, index, deltaDone) end)
+    |> Enum.reduce(%{}, fn {x, index}, acc -> map_segment(x, acc, index, delta_done) end)
     |> Map.merge(cmap)
   end
 
   # read CMap format 12 (5.2.1.3.7 Segmented coverage)
   # This is required by Windows fonts (Platform 3 encoding 10) that have UCS-4 characters
   # and is a SUPERSET of the data stored in format 4
-  defp readCMapData(
+  defp read_c_map_data(
          _platform,
          _encoding,
          <<12::16, _::16, _length::32, _lang::32, groups::32, subdata::binary>>,
          cmap
        ) do
-    readCMap12Entry([], subdata, groups)
-    |> Enum.reduce(%{}, fn {s, e, g}, acc -> mapCMap12Entry(s, e, g, acc) end)
+    read_c_map12_entry([], subdata, groups)
+    |> Enum.reduce(%{}, fn {s, e, g}, acc -> map_c_map12_entry(s, e, g, acc) end)
     |> Map.merge(cmap)
   end
 
   # unknown formats we ignore for now
-  defp readCMapData(_platform, _encoding, <<_fmt::16, _subdata::binary>>, cmap) do
+  defp read_c_map_data(_platform, _encoding, <<_fmt::16, _subdata::binary>>, cmap) do
     # IO.inspect {"READ", fmt, platform, encoding}
     cmap
   end
 
-  defp mapCMap12Entry(startcode, endcode, glyphindex, charmap) do
+  defp map_c_map12_entry(startcode, endcode, glyphindex, charmap) do
     offset = glyphindex - startcode
 
     startcode..endcode
@@ -526,24 +547,24 @@ defmodule OpenType.Parser do
     |> Map.merge(charmap)
   end
 
-  defp readCMap12Entry(entries, _, 0), do: entries
+  defp read_c_map12_entry(entries, _, 0), do: entries
 
-  defp readCMap12Entry(entries, data, count) do
+  defp read_c_map12_entry(entries, data, count) do
     <<s::32, e::32, g::32, remaining::binary>> = data
-    readCMap12Entry([{s, e, g} | entries], remaining, count - 1)
+    read_c_map12_entry([{s, e, g} | entries], remaining, count - 1)
   end
 
-  defp mapSegment({0xFFFF, 0xFFFF, _, _}, charmap, _, _) do
+  defp map_segment({0xFFFF, 0xFFFF, _, _}, charmap, _, _) do
     charmap
   end
 
-  defp mapSegment({first, last, delta, 0}, charmap, _, _) do
+  defp map_segment({first, last, delta, 0}, charmap, _, _) do
     first..last
     |> Map.new(fn x -> {x, x + delta &&& 0xFFFF} end)
     |> Map.merge(charmap)
   end
 
-  defp mapSegment({first, last, delta, offset}, charmap, segment_index, data) do
+  defp map_segment({first, last, delta, offset}, charmap, segment_index, data) do
     first..last
     |> Map.new(fn x ->
       offsetx = (x - first) * 2 + offset + 2 * segment_index
@@ -561,138 +582,140 @@ defmodule OpenType.Parser do
     |> Map.merge(charmap)
   end
 
-  defp readSegmentData(vals, data, 0) do
+  defp read_segment_data(vals, data, 0) do
     {vals, data}
   end
 
-  defp readSegmentData(vals, <<v::16, rest::binary>>, remaining) do
-    readSegmentData([v | vals], rest, remaining - 1)
+  defp read_segment_data(vals, <<v::16, rest::binary>>, remaining) do
+    read_segment_data([v | vals], rest, remaining - 1)
   end
 
-  defp readSignedSegmentData(vals, data, 0) do
+  defp read_signed_segment_data(vals, data, 0) do
     {vals, data}
   end
 
-  defp readSignedSegmentData(vals, <<v::signed-16, rest::binary>>, remaining) do
-    readSegmentData([v | vals], rest, remaining - 1)
+  defp read_signed_segment_data(vals, <<v::signed-16, rest::binary>>, remaining) do
+    read_segment_data([v | vals], rest, remaining - 1)
   end
 
-  def extractFeatures(ttf, data) do
-    {subS, subF, subL} =
-      if hasTable?(ttf, "GSUB"), do: extractOffHeader("GSUB", ttf, data), else: {[], [], []}
+  def extract_features(ttf, data) do
+    {sub_s, sub_f, sub_l} =
+      if has_table?(ttf, "GSUB"), do: extract_off_header("GSUB", ttf, data), else: {[], [], []}
 
-    {posS, posF, posL} =
-      if hasTable?(ttf, "GPOS"), do: extractOffHeader("GPOS", ttf, data), else: {[], [], []}
+    {pos_s, pos_f, pos_l} =
+      if has_table?(ttf, "GPOS"), do: extract_off_header("GPOS", ttf, data), else: {[], [], []}
 
     # read in definitions
-    gdef = rawTable(ttf, "GDEF", data)
-    definitions = if gdef != nil, do: extractGlyphDefinitionTable(gdef), else: nil
+    gdef = raw_table(ttf, "GDEF", data)
+    definitions = if gdef != nil, do: extract_glyph_definition_table(gdef), else: nil
 
     %{
       ttf
-      | substitutions: {subS, subF, subL},
-        positions: {posS, posF, posL},
+      | substitutions: {sub_s, sub_f, sub_l},
+        positions: {pos_s, pos_f, pos_l},
         definitions: definitions
     }
   end
 
   # returns script/language map, feature list, lookup tables
-  defp extractOffHeader(table, ttf, data) do
-    raw = rawTable(ttf, table, data)
+  defp extract_off_header(table, ttf, data) do
+    raw = raw_table(ttf, table, data)
 
     if raw == nil do
       Logger.debug("No #{table} table")
     end
 
-    <<versionMaj::16, versionMin::16, scriptListOff::16, featureListOff::16, lookupListOff::16,
-      _::binary>> = raw
+    <<version_maj::16, version_min::16, script_list_off::16, feature_list_off::16,
+      lookup_list_off::16, _::binary>> = raw
 
-    # if 1.1, also featureVariations::u32
-    if {versionMaj, versionMin} != {1, 0} do
-      Logger.debug("#{table} Header #{versionMaj}.#{versionMin}")
+    # if 1.1, also feature_variations::u32
+    if {version_maj, version_min} != {1, 0} do
+      Logger.debug("#{table} Header #{version_maj}.#{version_min}")
     end
 
-    lookupList = subtable(raw, lookupListOff)
-    <<nLookups::16, ll::binary-size(nLookups)-unit(16), _::binary>> = lookupList
+    lookup_list = subtable(raw, lookup_list_off)
+    <<n_lookups::16, ll::binary-size(n_lookups)-unit(16), _::binary>> = lookup_list
     # this actually gives us offsets to lookup tables
     lookups = for <<(<<x::16>> <- ll)>>, do: x
 
-    lookupTables =
+    lookup_tables =
       lookups
-      |> Enum.map(fn x -> getLookupTable(x, lookupList) end)
+      |> Enum.map(fn x -> get_lookup_table(x, lookup_list) end)
 
     # get the feature array
-    featureList = subtable(raw, featureListOff)
-    features = parseFeatures(featureList)
+    feature_list = subtable(raw, feature_list_off)
+    features = parse_features(feature_list)
 
-    scriptList = subtable(raw, scriptListOff)
-    <<nScripts::16, sl::binary-size(nScripts)-unit(48), _::binary>> = scriptList
+    script_list = subtable(raw, script_list_off)
+    <<n_scripts::16, sl::binary-size(n_scripts)-unit(48), _::binary>> = script_list
     scripts = for <<(<<tag::binary-size(4), offset::16>> <- sl)>>, do: {tag, offset}
 
     scripts =
       scripts
-      |> Enum.map(fn {tag, off} -> readScriptTable(tag, scriptList, off) end)
+      |> Enum.map(fn {tag, off} -> read_script_table(tag, script_list, off) end)
       |> Map.new()
 
-    {scripts, features, lookupTables}
+    {scripts, features, lookup_tables}
   end
 
-  defp extractGlyphDefinitionTable(table) do
-    <<versionMaj::16, versionMin::16, glyphClassDef::16, _attachList::16, _ligCaretList::16,
-      markAttachClass::16, rest::binary>> = table
+  defp extract_glyph_definition_table(table) do
+    <<version_maj::16, version_min::16, glyph_class_def::16, _attach_list::16,
+      _lig_caret_list::16, mark_attach_class::16, rest::binary>> = table
 
-    # 1.2 also has 16-bit offset to MarkGlyphSetsDef
-    markGlyphSets =
-      if versionMaj >= 1 and versionMin >= 2 do
-        <<markGlyphSets::16, _::binary>> = rest
-        if markGlyphSets == 0, do: nil, else: markGlyphSets
+    # 1.2 also has 16-bit offset to mark_glyph_sets_def
+    mark_glyph_sets =
+      if version_maj >= 1 and version_min >= 2 do
+        <<mark_glyph_sets::16, _::binary>> = rest
+        if mark_glyph_sets == 0, do: nil, else: mark_glyph_sets
       else
         nil
       end
 
-    # 1.3 also has 32-bit offset to ItemVarStore
-    # Logger.debug "GDEF #{versionMaj}.#{versionMin}"
+    # 1.3 also has 32-bit offset to item_var_store
+    # Logger.debug "GDEF #{version_maj}.#{version_min}"
 
     # predefined classes for use with GSUB/GPOS flags
     # 1 = Base, 2 = Ligature, 3 = Mark, 4 = Component
-    glyphClassDef =
-      if glyphClassDef > 0, do: parseGlyphClass(subtable(table, glyphClassDef)), else: nil
+    glyph_class_def =
+      if glyph_class_def > 0, do: parse_glyph_class(subtable(table, glyph_class_def)), else: nil
 
     # mark attachment class (may be NULL; used with flag in GPOS/GSUB lookups)
-    markAttachClass =
-      if markAttachClass > 0, do: parseGlyphClass(subtable(table, markAttachClass)), else: nil
+    mark_attach_class =
+      if mark_attach_class > 0,
+        do: parse_glyph_class(subtable(table, mark_attach_class)),
+        else: nil
 
     # mark glyph sets (may be NULL)
-    glyphSets =
-      if markGlyphSets != nil do
-        mgs = subtable(table, markGlyphSets)
-        <<_fmt::16, nGlyphSets::16, gsets::binary-size(nGlyphSets)-unit(32), _::binary>> = mgs
-        for <<(<<off::32>> <- gsets)>>, do: parseCoverage(subtable(mgs, off))
+    glyph_sets =
+      if mark_glyph_sets != nil do
+        mgs = subtable(table, mark_glyph_sets)
+        <<_fmt::16, n_glyph_sets::16, gsets::binary-size(n_glyph_sets)-unit(32), _::binary>> = mgs
+        for <<(<<off::32>> <- gsets)>>, do: parse_coverage(subtable(mgs, off))
       else
         nil
       end
 
-    _mgs = markGlyphSets
-    %{attachments: markAttachClass, classes: glyphClassDef, mark_sets: glyphSets}
+    _mgs = mark_glyph_sets
+    %{attachments: mark_attach_class, classes: glyph_class_def, mark_sets: glyph_sets}
   end
 
   # this should probably be an actual map of tag: [indices]
-  def parseFeatures(data) do
-    <<nFeatures::16, fl::binary-size(nFeatures)-unit(48), _::binary>> = data
+  def parse_features(data) do
+    <<n_features::16, fl::binary-size(n_features)-unit(48), _::binary>> = data
     features = for <<(<<tag::binary-size(4), offset::16>> <- fl)>>, do: {tag, offset}
 
     features
-    |> Enum.map(fn {t, o} -> readLookupIndices(t, o, data) end)
+    |> Enum.map(fn {t, o} -> read_lookup_indices(t, o, data) end)
   end
 
-  # returns {lookupType, lookupFlags, [subtable offsets], <<raw table bytes>>, mark filtering set}
-  defp getLookupTable(offset, data) do
+  # returns {lookup_type, lookup_flags, [subtable offsets], <<raw table bytes>>, mark filtering set}
+  defp get_lookup_table(offset, data) do
     tbl = subtable(data, offset)
 
-    <<lookupType::16, flags::16, nsubtables::16, st::binary-size(nsubtables)-unit(16),
+    <<lookup_type::16, flags::16, nsubtables::16, st::binary-size(nsubtables)-unit(16),
       rest::binary>> = tbl
 
-    # if flag bit for markfilteringset, also markFilteringSetIndex::16
+    # if flag bit for markfilteringset, also mark_filtering_set_index::16
     mfs =
       if flags &&& 0x0010 do
         <<mfs::16, _::binary>> = rest
@@ -702,37 +725,37 @@ defmodule OpenType.Parser do
       end
 
     subtables = for <<(<<y::16>> <- st)>>, do: y
-    {lookupType, flags, subtables, tbl, mfs}
+    {lookup_type, flags, subtables, tbl, mfs}
   end
 
-  defp readScriptTable(tag, data, offset) do
+  defp read_script_table(tag, data, offset) do
     script_table = subtable(data, offset)
-    <<defaultOff::16, nLang::16, langx::binary-size(nLang)-unit(48), _::binary>> = script_table
+    <<default_off::16, n_lang::16, langx::binary-size(n_lang)-unit(48), _::binary>> = script_table
     langs = for <<(<<tag::binary-size(4), offset::16>> <- langx)>>, do: {tag, offset}
 
     langs =
       langs
-      |> Enum.map(fn {tag, offset} -> readFeatureIndices(tag, offset, script_table) end)
+      |> Enum.map(fn {tag, offset} -> read_feature_indices(tag, offset, script_table) end)
       |> Map.new()
 
     langs =
-      if defaultOff == 0 do
+      if default_off == 0 do
         langs
       else
-        {_, indices} = readFeatureIndices(nil, defaultOff, script_table)
+        {_, indices} = read_feature_indices(nil, default_off, script_table)
         Map.put(langs, nil, indices)
       end
 
     {tag, langs}
   end
 
-  defp readFeatureIndices(tag, offset, data) do
+  defp read_feature_indices(tag, offset, data) do
     feature_part = subtable(data, offset)
 
-    <<reorderingTable::16, req::16, nFeatures::16, fx::binary-size(nFeatures)-unit(16),
+    <<reordering_table::16, req::16, n_features::16, fx::binary-size(n_features)-unit(16),
       _::binary>> = feature_part
 
-    if reorderingTable != 0 do
+    if reordering_table != 0 do
       Logger.debug("Lang #{tag} has a reordering table")
     end
 
@@ -741,13 +764,13 @@ defmodule OpenType.Parser do
     {tag, indices}
   end
 
-  defp readLookupIndices(tag, offset, data) do
+  defp read_lookup_indices(tag, offset, data) do
     lookup_part = subtable(data, offset)
 
-    <<featureParamsOffset::16, nLookups::16, fx::binary-size(nLookups)-unit(16), _::binary>> =
+    <<feature_params_offset::16, n_lookups::16, fx::binary-size(n_lookups)-unit(16), _::binary>> =
       lookup_part
 
-    if featureParamsOffset != 0 do
+    if feature_params_offset != 0 do
       Logger.debug("Feature #{tag} has feature params")
     end
 
@@ -755,8 +778,8 @@ defmodule OpenType.Parser do
     {tag, indices}
   end
 
-  def parseGlyphClass(
-        <<1::16, start::16, nGlyphs::16, classes::binary-size(nGlyphs)-unit(16), _::binary>>
+  def parse_glyph_class(
+        <<1::16, start::16, n_glyphs::16, classes::binary-size(n_glyphs)-unit(16), _::binary>>
       ) do
     classes = for <<(<<class::16>> <- classes)>>, do: class
 
@@ -765,32 +788,34 @@ defmodule OpenType.Parser do
     |> Map.new(fn {class, glyph} -> {glyph, class} end)
   end
 
-  def parseGlyphClass(<<2::16, nRanges::16, ranges::binary-size(nRanges)-unit(48), _::binary>>) do
+  def parse_glyph_class(
+        <<2::16, n_ranges::16, ranges::binary-size(n_ranges)-unit(48), _::binary>>
+      ) do
     ranges = for <<(<<first::16, last::16, class::16>> <- ranges)>>, do: {first, last, class}
     ranges
   end
 
   # parse coverage tables
-  def parseCoverage(<<1::16, nrecs::16, glyphs::binary-size(nrecs)-unit(16), _::binary>>) do
+  def parse_coverage(<<1::16, nrecs::16, glyphs::binary-size(nrecs)-unit(16), _::binary>>) do
     for <<(<<x::16>> <- glyphs)>>, do: x
   end
 
-  def parseCoverage(<<2::16, nrecs::16, ranges::binary-size(nrecs)-unit(48), _::binary>>) do
+  def parse_coverage(<<2::16, nrecs::16, ranges::binary-size(nrecs)-unit(48), _::binary>>) do
     for <<(<<startg::16, endg::16, covindex::16>> <- ranges)>>, do: {startg, endg, covindex}
   end
 
-  def parseAlts(table, altOffset) do
-    <<nAlts::16, alts::binary-size(nAlts)-unit(16), _::binary>> = subtable(table, altOffset)
+  def parse_alts(table, alt_offset) do
+    <<n_alts::16, alts::binary-size(n_alts)-unit(16), _::binary>> = subtable(table, alt_offset)
     for <<(<<x::16>> <- alts)>>, do: x
   end
 
-  def parseLigatureSet(table, lsOffset) do
-    <<nrecs::16, ligat::binary-size(nrecs)-unit(16), _::binary>> = subtable(table, lsOffset)
-    ligaOff = for <<(<<x::16>> <- ligat)>>, do: x
+  def parse_ligature_set(table, ls_offset) do
+    <<nrecs::16, ligat::binary-size(nrecs)-unit(16), _::binary>> = subtable(table, ls_offset)
+    liga_off = for <<(<<x::16>> <- ligat)>>, do: x
 
-    ligaOff
-    |> Enum.map(fn x -> subtable(table, lsOffset + x) end)
-    |> Enum.map(fn <<g::16, nComps::16, rest::binary>> -> {g, nComps - 1, rest} end)
+    liga_off
+    |> Enum.map(fn x -> subtable(table, ls_offset + x) end)
+    |> Enum.map(fn <<g::16, n_comps::16, rest::binary>> -> {g, n_comps - 1, rest} end)
     |> Enum.map(fn {g, n, data} ->
       <<recs::binary-size(n)-unit(16), _::binary>> = data
       gg = for <<(<<x::16>> <- recs)>>, do: x
@@ -798,93 +823,93 @@ defmodule OpenType.Parser do
     end)
   end
 
-  def parseContextSubRule1(rule) do
-    <<nGlyphs::16, substCount::16, rest::binary>> = rule
+  def parse_context_sub_rule1(rule) do
+    <<n_glyphs::16, subst_count::16, rest::binary>> = rule
     # subtract one since initial glyph handled by coverage
-    glyphCount = nGlyphs - 1
+    glyph_count = n_glyphs - 1
 
-    <<input::binary-size(glyphCount)-unit(16), substRecs::binary-size(substCount)-unit(32),
+    <<input::binary-size(glyph_count)-unit(16), subst_recs::binary-size(subst_count)-unit(32),
       _::binary>> = rest
 
     input_glyphs = for <<(<<g::16>> <- input)>>, do: g
-    substRecords = for <<(<<x::16, y::16>> <- substRecs)>>, do: {x, y}
-    {input_glyphs, substRecords}
+    subst_records = for <<(<<x::16, y::16>> <- subst_recs)>>, do: {x, y}
+    {input_glyphs, subst_records}
   end
 
-  def parseChainedSubRule2(rule) do
-    <<btCount::16, bt::binary-size(btCount)-unit(16), nGlyphs::16, rest::binary>> = rule
+  def parse_chained_sub_rule2(rule) do
+    <<bt_count::16, bt::binary-size(bt_count)-unit(16), n_glyphs::16, rest::binary>> = rule
     # subtract one since initial glyph handled by coverage
-    glyphCount = nGlyphs - 1
+    glyph_count = n_glyphs - 1
 
-    <<input::binary-size(glyphCount)-unit(16), laCount::16, la::binary-size(laCount)-unit(16),
-      substCount::16, substRecs::binary-size(substCount)-unit(32), _::binary>> = rest
+    <<input::binary-size(glyph_count)-unit(16), la_count::16, la::binary-size(la_count)-unit(16),
+      subst_count::16, subst_recs::binary-size(subst_count)-unit(32), _::binary>> = rest
 
     backtrack = for <<(<<g::16>> <- bt)>>, do: g
     lookahead = for <<(<<g::16>> <- la)>>, do: g
     input_glyphs = for <<(<<g::16>> <- input)>>, do: g
-    substRecords = for <<(<<x::16, y::16>> <- substRecs)>>, do: {x, y}
-    {backtrack, input_glyphs, lookahead, substRecords}
+    subst_records = for <<(<<x::16, y::16>> <- subst_recs)>>, do: {x, y}
+    {backtrack, input_glyphs, lookahead, subst_records}
   end
 
-  def parseAnchor(<<_fmt::16, xCoord::signed-16, yCoord::signed-16, _rest::binary>>) do
-    # anchorTable (common table)
+  def parse_anchor(<<_fmt::16, x_coord::signed-16, y_coord::signed-16, _rest::binary>>) do
+    # anchor_table (common table)
     # coords are signed!
-    # fmt = 1, xCoord::16, yCoord::16
-    # fmt = 2, xCoord::16, yCoord::16, index to glyph countour point::16
-    # fmt = 3, xCoord::16, yCoord::16, device table offset (for x)::16, device table offset (for y)::16
-    {xCoord, yCoord}
+    # fmt = 1, x_coord::16, y_coord::16
+    # fmt = 2, x_coord::16, y_coord::16, index to glyph countour point::16
+    # fmt = 3, x_coord::16, y_coord::16, device table offset (for x)::16, device table offset (for y)::16
+    {x_coord, y_coord}
   end
 
-  def parseMarkArray(table) do
-    <<nRecs::16, records::binary-size(nRecs)-unit(32), _::binary>> = table
+  def parse_mark_array(table) do
+    <<n_recs::16, records::binary-size(n_recs)-unit(32), _::binary>> = table
 
-    markArray =
-      for <<(<<markClass::16, anchorTableOffset::16>> <- records)>>,
-        do: {markClass, anchorTableOffset}
+    mark_array =
+      for <<(<<mark_class::16, anchor_table_offset::16>> <- records)>>,
+        do: {mark_class, anchor_table_offset}
 
-    markArray
-    |> Enum.map(fn {c, o} -> {c, parseAnchor(subtable(table, o))} end)
+    mark_array
+    |> Enum.map(fn {c, o} -> {c, parse_anchor(subtable(table, o))} end)
   end
 
-  def parsePairSet(table, offset, fmtA, fmtB) do
-    sizeA = valueRecordSize(fmtA)
-    sizeB = valueRecordSize(fmtB)
+  def parse_pair_set(table, offset, fmt_a, fmt_b) do
+    size_a = value_record_size(fmt_a)
+    size_b = value_record_size(fmt_b)
     data = binary_part(table, offset, byte_size(table) - offset)
-    # valueRecordSize returns size in bytes
-    pairSize = 2 + sizeA + sizeB
-    <<nPairs::16, pairdata::binary>> = data
+    # value_record_size returns size in bytes
+    pair_size = 2 + size_a + size_b
+    <<n_pairs::16, pairdata::binary>> = data
 
     pairs =
-      for <<(<<glyph::16, v1::binary-size(sizeA), v2::binary-size(sizeB)>> <-
-               binary_part(pairdata, 0, pairSize * nPairs))>>,
+      for <<(<<glyph::16, v1::binary-size(size_a), v2::binary-size(size_b)>> <-
+               binary_part(pairdata, 0, pair_size * n_pairs))>>,
           do: {glyph, v1, v2}
 
     pairs =
       pairs
       |> Enum.map(fn {g, v1, v2} ->
-        {g, readPositioningValueRecord(fmtA, v1), readPositioningValueRecord(fmtB, v2)}
+        {g, read_positioning_value_record(fmt_a, v1), read_positioning_value_record(fmt_b, v2)}
       end)
 
     pairs
   end
 
-  # ValueRecord in spec
-  def readPositioningValueRecord(0, _), do: nil
+  # value_record in spec
+  def read_positioning_value_record(0, _), do: nil
 
-  def readPositioningValueRecord(format, bytes) do
+  def read_positioning_value_record(format, bytes) do
     # format is bitset of fields to read for each records
-    {xPlace, xprest} = extractValueRecordVal(format &&& 0x0001, bytes)
-    {yPlace, yprest} = extractValueRecordVal(format &&& 0x0002, xprest)
-    {xAdv, xarest} = extractValueRecordVal(format &&& 0x0004, yprest)
-    {yAdv, _xyrest} = extractValueRecordVal(format &&& 0x0008, xarest)
+    {x_place, xprest} = extract_value_record_val(format &&& 0x0001, bytes)
+    {y_place, yprest} = extract_value_record_val(format &&& 0x0002, xprest)
+    {x_adv, xarest} = extract_value_record_val(format &&& 0x0004, yprest)
+    {y_adv, _xyrest} = extract_value_record_val(format &&& 0x0008, xarest)
 
     # TODO: also offsets to device table
-    {xPlace, yPlace, xAdv, yAdv}
+    {x_place, y_place, x_adv, y_adv}
   end
 
-  defp extractValueRecordVal(_flag, ""), do: {0, ""}
+  defp extract_value_record_val(_flag, ""), do: {0, ""}
 
-  defp extractValueRecordVal(flag, data) do
+  defp extract_value_record_val(flag, data) do
     if flag != 0 do
       <<x::signed-16, r::binary>> = data
       {x, r}
@@ -893,7 +918,7 @@ defmodule OpenType.Parser do
     end
   end
 
-  def valueRecordSize(format) do
+  def value_record_size(format) do
     flags = for <<(x::1 <- <<format>>)>>, do: x
     # record size is 2 bytes per set flag in the format spec
     Enum.count(flags, fn x -> x == 1 end) * 2

@@ -9,40 +9,41 @@ defmodule OpenType do
   alias OpenType.Layout
   alias OpenType.GlyphInfo
 
+  defstruct version: 0,
+            tables: [],
+            name: nil,
+            bbox: %OpenType.BBox{},
+            ascent: 0,
+            descent: 0,
+            x_height: 0,
+            cap_height: 0,
+            max_content: 0,
+            break_char: 0,
+            default_char: 0,
+            units_per_em: 0,
+            us_weight_class: 500,
+            stem_v: 0,
+            italic_angle: 0,
+            flags: 0,
+            glyph_widths: [],
+            default_width: 0,
+            sub_type: {:name, "Type0"},
+            embed: nil,
+            cid2gid: %{},
+            gid2cid: %{},
+            substitutions: nil,
+            positions: nil,
+            definitions: nil,
+            is_cff: false,
+            family_class: 0
+
   @doc """
   Create an empty structure with sensible defaults.
 
   This will likely be replaced in future with a proper struct.
   """
   def new do
-    %{
-      :version => 0,
-      :tables => [],
-      :name => nil,
-      :bbox => [],
-      :ascent => 0,
-      :descent => 0,
-      :capHeight => 0,
-      :unitsPerEm => 0,
-      :usWeightClass => 500,
-      :stemV => 0,
-      :italicAngle => 0,
-      :flags => 0,
-      :glyphWidths => [],
-      :defaultWidth => 0,
-      "SubType" => {:name, "Type0"},
-      :embed => nil,
-      :cid2gid => %{},
-      :gid2cid => %{},
-      # GSUB
-      :substitutions => nil,
-      # GPOS
-      :positions => nil,
-      # GDEF
-      :definitions => nil,
-      :isCFF => false,
-      :familyClass => 0
-    }
+    %__MODULE__{}
   end
 
   @doc """
@@ -62,13 +63,13 @@ defmodule OpenType do
   """
   def parse(ttf, data) do
     ttf
-    |> Parser.extractVersion(data)
-    |> Parser.readHeader(data)
-    |> Parser.extractName(data)
-    |> Parser.extractMetrics(data)
-    |> Parser.markEmbeddedPart(data)
-    |> Parser.extractCMap(data)
-    |> Parser.extractFeatures(data)
+    |> Parser.extract_version(data)
+    |> Parser.read_header(data)
+    |> Parser.extract_name(data)
+    |> Parser.extract_metrics(data)
+    |> Parser.mark_embedded_part(data)
+    |> Parser.extract_c_map(data)
+    |> Parser.extract_features(data)
   end
 
   @doc """
@@ -139,7 +140,7 @@ defmodule OpenType do
       end
 
     # shaper = layout.selectshaper(script)
-    # {glyphs, glyph_features} = shaper.markLocalFeatures(glyphs)
+    # {glyphs, glyph_features} = shaper.mark_local_features(glyphs)
     # opentype.substitutions(glyphs, font, script, lang, features, glyph_features)
 
     # see OpenType feature registry for required, never disabled,
@@ -194,7 +195,7 @@ defmodule OpenType do
   end
 
   # is there a particular font table?
-  def hasTable?(ttf, name) do
+  def has_table?(ttf, name) do
     Enum.any?(ttf.tables, fn x -> x.name == name end)
   end
 
@@ -202,15 +203,15 @@ defmodule OpenType do
   # based upon the script, language, and active OpenType features
   defp handle_substitutions(glyphs, ttf, script, lang, active_features, per_glyph_features) do
     # use data in GSUB to do any substitutions
-    {scripts, subF, subL} = ttf.substitutions
+    {scripts, sub_f, sub_l} = ttf.substitutions
 
     # features actually provided by the font
-    availableFeatures = getFeatures(scripts, script, lang)
+    available_features = get_features(scripts, script, lang)
 
     # combine indices, apply in order given in LookupList table
     lookups =
-      availableFeatures
-      |> Enum.map(fn x -> Enum.at(subF, x) end)
+      available_features
+      |> Enum.map(fn x -> Enum.at(sub_f, x) end)
       |> Enum.filter(fn {tag, _} -> tag in active_features end)
       |> Enum.map(fn {_, l} -> l end)
       |> List.flatten()
@@ -218,14 +219,14 @@ defmodule OpenType do
       |> Enum.uniq()
 
     # we know which lookups are going to be used
-    # we can parse now, update subL, apply below!
+    # we can parse now, update sub_l, apply below!
     lookup_cache =
-      Enum.reduce(lookups, subL, fn x, cache -> Substitutions.parse_lookup_table(x, cache) end)
+      Enum.reduce(lookups, sub_l, fn x, cache -> Substitutions.parse_lookup_table(x, cache) end)
 
     # per-glyph lookups
     pgl =
-      availableFeatures
-      |> Enum.map(fn x -> Enum.at(subF, x) end)
+      available_features
+      |> Enum.map(fn x -> Enum.at(sub_f, x) end)
       |> Enum.filter(fn {tag, _} -> tag in per_glyph_features end)
       |> Enum.map(fn {tag, l} -> for i <- l, do: {i, tag} end)
       |> List.flatten()
@@ -264,7 +265,7 @@ defmodule OpenType do
     # TODO: handle vertical writing
     positions =
       glyphs
-      |> Stream.map(fn g -> Enum.at(ttf.glyphWidths, g.glyph, ttf.defaultWidth) end)
+      |> Stream.map(fn g -> Enum.at(ttf.glyph_widths, g.glyph, ttf.default_width) end)
       |> Stream.map(fn advance -> {:std_width, 0, 0, advance, 0} end)
       |> Enum.to_list()
 
@@ -274,12 +275,12 @@ defmodule OpenType do
     # to kern, position, and join
     {scripts, features, lookups} = ttf.positions
 
-    availableFeatures = getFeatures(scripts, script, lang)
+    available_features = get_features(scripts, script, lang)
 
     # each feature provides lookup indices
     # combine indices, apply in order given in LookupList table
     indices =
-      availableFeatures
+      available_features
       |> Stream.map(fn x -> Enum.at(features, x) end)
       |> Stream.filter(fn {tag, _} -> tag in active_features end)
       |> Enum.map(fn {_, l} -> l end)
@@ -287,11 +288,11 @@ defmodule OpenType do
       |> Enum.sort()
       |> Enum.uniq()
 
-    # we can parse now, update subL, apply below!
+    # we can parse now, update sub_l, apply below!
     lookup_cache =
       Enum.reduce(indices, lookups, fn x, cache -> Positioning.parse_lookup_table(x, cache) end)
 
-    isRTL = UnicodeData.right_to_left?(script)
+    is_rtl = UnicodeData.right_to_left?(script)
     # apply the lookups
     # returns glyphs, positioning, cursive attachments
     {g, p} =
@@ -300,23 +301,23 @@ defmodule OpenType do
           Enum.at(lookup_cache, x),
           ttf.definitions,
           lookup_cache,
-          isRTL,
+          is_rtl,
           acc
         )
       end)
 
     # make cursive and mark positioning adjustments
     # first apply any cursive adjustments
-    cDeltas = g |> Enum.map(& &1.cursiveDelta)
-    {p, _deltas} = Positioning.adjustCursiveOffset(p, cDeltas)
+    c_deltas = g |> Enum.map(& &1.cursive_delta)
+    {p, _deltas} = Positioning.adjust_cursive_offset(p, c_deltas)
     # then apply any mark adjustments
-    mDeltas = g |> Enum.map(& &1.markDelta)
-    {p, _deltas} = Positioning.adjustMarkOffsets(p, mDeltas, isRTL)
+    m_deltas = g |> Enum.map(& &1.mark_delta)
+    {p, _deltas} = Positioning.adjust_mark_offsets(p, m_deltas, is_rtl)
 
     g = g |> Enum.map(& &1.glyph)
 
     # if script is RTL, reverse
-    if isRTL do
+    if is_rtl do
       {Enum.reverse(g), Enum.reverse(p)}
     else
       {g, p}
@@ -325,11 +326,11 @@ defmodule OpenType do
 
   # given a script and language, get the appropriate features
   # (falling back as appropriate)
-  defp getFeatures([], _script, _lang) do
+  defp get_features([], _script, _lang) do
     []
   end
 
-  defp getFeatures(scripts, script, lang) do
+  defp get_features(scripts, script, lang) do
     # Fallback to "DFLT", "dflt", or "latn" script; else ignore all
     selected_script =
       scripts[script] || scripts["DFLT"] || scripts["dflt"] || scripts["latn"] || %{}
