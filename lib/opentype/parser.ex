@@ -267,7 +267,7 @@ defmodule OpenType.Parser do
           _strikeout_pos::signed-16, family_class::signed-16, _panose::80, _unicode_range1::32,
           _unicode_range2::32, _unicode_range3::32, _unicode_range4::32, _vendor_id::32,
           _sel_flags::16, _first_char::16, _last_char::16, typo_ascend::signed-16,
-          typo_descend::signed-16, _typo_line_gap::signed-16, _win_ascent::16, _win_descent::16,
+          typo_descend::signed-16, typo_line_gap::signed-16, _win_ascent::16, _win_descent::16,
           v0rest::binary>> = raw_os2
 
         Logger.debug("OS/2 ver #{os2ver} found")
@@ -291,6 +291,7 @@ defmodule OpenType.Parser do
             ttf
             | ascent: typo_ascend,
               descent: typo_descend,
+              line_gap: typo_line_gap,
               cap_height: cap_height,
               max_content: max_content,
               break_char: break_char,

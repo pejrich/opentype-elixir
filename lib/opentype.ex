@@ -15,6 +15,7 @@ defmodule OpenType do
             bbox: %OpenType.BBox{},
             ascent: 0,
             descent: 0,
+            line_gap: 0,
             x_height: 0,
             cap_height: 0,
             max_content: 0,
