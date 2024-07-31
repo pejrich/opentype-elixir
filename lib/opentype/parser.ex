@@ -416,7 +416,7 @@ defmodule OpenType.Parser do
 
   defp get_glyph_widths(_, acc, 0), do: Enum.reverse(acc)
 
-  defp get_glyph_widths(<<width::16, rest::binary>>, acc, i),
+  defp get_glyph_widths(<<width::16, _::16, rest::binary>>, acc, i),
     do: get_glyph_widths(rest, [width | acc], i - 1)
 
   # mark what portion of the font is embedded
