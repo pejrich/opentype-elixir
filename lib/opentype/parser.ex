@@ -5,7 +5,7 @@ defmodule OpenType.Parser do
 
   # extract the TTF (or TTC) version
   def extract_version(ttf, <<version::size(32), data::binary>>) do
-    {%{ttf | :version => version}, data}
+    {%{ttf | version: version}, data}
   end
 
   # read in the font header
@@ -17,7 +17,7 @@ defmodule OpenType.Parser do
 
     tables = read_tables(remainder, num_tables)
     is_cff = Enum.any?(tables, fn x -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :is_cff => is_cff}
+    %{ttf | tables: tables, is_cff: is_cff}
   end
 
   def read_header({%{version: 0x74727566} = ttf, data}, full_data) do
@@ -33,7 +33,7 @@ defmodule OpenType.Parser do
     # IO.puts "Subfont 0 has #{num_tables} tables"
     tables = read_tables(remainder, num_tables)
     is_cff = Enum.any?(tables, fn x -> x.name == "CFF " end)
-    %{ttf | :tables => tables, :is_cff => is_cff}
+    %{ttf | tables: tables, is_cff: is_cff}
   end
 
   def read_header({ttf, _data}, _) do
@@ -423,15 +423,7 @@ defmodule OpenType.Parser do
   # mark what portion of the font is embedded
   # this may get more complex when we do proper subsetting
   def mark_embedded_part(ttf, data) do
-    embedded =
-      if ttf.is_cff do
-        # raw_table(ttf, "CFF ", data)
-        data
-      else
-        data
-      end
-
-    %{ttf | :embed => embedded}
+    %{ttf | embed: data}
   end
 
   # cmap header
@@ -516,8 +508,7 @@ defmodule OpenType.Parser do
     # TODO: also generate glyph-to-character map
     segs
     |> Enum.with_index()
-    |> Enum.reduce(%{}, fn {x, index}, acc -> map_segment(x, acc, index, delta_done) end)
-    |> Map.merge(cmap)
+    |> Enum.reduce(cmap, fn {x, index}, acc -> map_segment(x, acc, index, delta_done) end)
   end
 
   # read CMap format 12 (5.2.1.3.7 Segmented coverage)
@@ -530,8 +521,7 @@ defmodule OpenType.Parser do
          cmap
        ) do
     read_c_map12_entry([], subdata, groups)
-    |> Enum.reduce(%{}, fn {s, e, g}, acc -> map_c_map12_entry(s, e, g, acc) end)
-    |> Map.merge(cmap)
+    |> Enum.reduce(cmap, fn {s, e, g}, acc -> map_c_map12_entry(s, e, g, acc) end)
   end
 
   # unknown formats we ignore for now
@@ -544,8 +534,7 @@ defmodule OpenType.Parser do
     offset = glyphindex - startcode
 
     startcode..endcode
-    |> Map.new(fn x -> {x, x + offset} end)
-    |> Map.merge(charmap)
+    |> Enum.reduce(charmap, fn i, acc -> Map.put_new(acc, i, i + offset) end)
   end
 
   defp read_c_map12_entry(entries, _, 0), do: entries
@@ -561,26 +550,22 @@ defmodule OpenType.Parser do
 
   defp map_segment({first, last, delta, 0}, charmap, _, _) do
     first..last
-    |> Map.new(fn x -> {x, x + delta &&& 0xFFFF} end)
-    |> Map.merge(charmap)
+    |> Enum.reduce(charmap, fn x, acc -> Map.put_new(acc, x, x + delta &&& 0xFFFF) end)
   end
 
   defp map_segment({first, last, delta, offset}, charmap, segment_index, data) do
     first..last
-    |> Map.new(fn x ->
+    |> Enum.reduce(charmap, fn x, acc ->
       offsetx = (x - first) * 2 + offset + 2 * segment_index
-      <<glyph::16>> = binary_part(data, offsetx, 2)
 
       g =
-        if glyph == 0 do
-          0
-        else
-          glyph + delta
+        case binary_part(data, offsetx, 2) do
+          <<0::16>> -> 0
+          <<glyph::16>> -> glyph + delta
         end
 
-      {x, g &&& 0xFFFF}
+      Map.put_new(acc, x, g &&& 0xFFFF)
     end)
-    |> Map.merge(charmap)
   end
 
   defp read_segment_data(vals, data, 0) do
@@ -815,8 +800,8 @@ defmodule OpenType.Parser do
     liga_off = for <<(<<x::16>> <- ligat)>>, do: x
 
     liga_off
-    |> Enum.map(fn x -> subtable(table, ls_offset + x) end)
-    |> Enum.map(fn <<g::16, n_comps::16, rest::binary>> -> {g, n_comps - 1, rest} end)
+    |> Stream.map(fn x -> subtable(table, ls_offset + x) end)
+    |> Stream.map(fn <<g::16, n_comps::16, rest::binary>> -> {g, n_comps - 1, rest} end)
     |> Enum.map(fn {g, n, data} ->
       <<recs::binary-size(n)-unit(16), _::binary>> = data
       gg = for <<(<<x::16>> <- recs)>>, do: x
