@@ -400,8 +400,7 @@ defmodule OpenType.Parser do
       # number of glyphs -- will need to subset if more than 255
       # hmtx (glyph widths)
       raw_hmtx = raw_table(ttf, "hmtx", data)
-      range = 1..num_metrics
-      gw = Enum.map(range, fn x -> get_glyph_width(raw_hmtx, x - 1) end)
+      gw = get_glyph_widths(raw_hmtx, [], num_metrics)
 
       %{
         ttf
@@ -415,10 +414,10 @@ defmodule OpenType.Parser do
     end
   end
 
-  defp get_glyph_width(hmtx, index) do
-    <<width::16>> = binary_part(hmtx, index * 4, 2)
-    width
-  end
+  defp get_glyph_widths(_, acc, 0), do: Enum.reverse(acc)
+
+  defp get_glyph_widths(<<width::16, rest::binary>>, acc, i),
+    do: get_glyph_widths(rest, [width | acc], i - 1)
 
   # mark what portion of the font is embedded
   # this may get more complex when we do proper subsetting
