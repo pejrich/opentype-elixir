@@ -142,11 +142,9 @@ defmodule OpenType.Substitutions do
           apply_context_sub2(coverage, rulesets, classes, lookups, glyphs, [])
 
         3 ->
-          Logger.debug("GSUB 5.3 - contextual substitution")
           glyphs
 
         _ ->
-          Logger.debug("GSUB 5 - contextual substitution format #{format}")
           glyphs
       end
 
@@ -160,7 +158,6 @@ defmodule OpenType.Substitutions do
     output =
       case format do
         1 ->
-          Logger.debug("GSUB 6.1 - chained substitution")
           glyphs
 
         2 ->
@@ -199,7 +196,6 @@ defmodule OpenType.Substitutions do
           unfilter_glyphs(replaced, skipped)
 
         _ ->
-          Logger.debug("GSUB 6 - chaining substitution format #{format}")
           glyphs
       end
 
@@ -219,7 +215,6 @@ defmodule OpenType.Substitutions do
     end
 
     # Logger.debug "GSUB 8 - reverse chaining substitution"
-    Logger.debug("GSUB 8 - reverse chaining substitution")
     {bt_coverage, coverage, la_coverage, subst_records} = sub
     {f, skipped} = filter_glyphs(glyphs, flag, gdef, mfs)
 
@@ -382,7 +377,6 @@ defmodule OpenType.Substitutions do
           nil
 
         _ ->
-          Logger.debug("GSUB 5 - contextual substitution format #{format}")
           nil
       end
 
@@ -396,7 +390,6 @@ defmodule OpenType.Substitutions do
     output =
       case format do
         1 ->
-          Logger.debug("GSUB 6.1 - chained substitution")
           nil
 
         2 ->
@@ -458,7 +451,6 @@ defmodule OpenType.Substitutions do
           {bt_coverage, coverage, la_coverage, subst_records}
 
         _ ->
-          Logger.debug("GSUB 6 - chaining substitution format #{format}")
           nil
       end
 
@@ -467,7 +459,6 @@ defmodule OpenType.Substitutions do
 
   # GSUB type 8 -- reverse chained contextual substitution (one-for-one)
   def parse_lookup(8, table) do
-    # Logger.debug "GSUB 8 - reverse chaining substitution"
     <<1::16, cov_off::16, details::binary>> = table
 
     <<backtrack_count::16, backoff::binary-size(backtrack_count)-unit(16), lookahead_count::16,
@@ -678,7 +669,6 @@ defmodule OpenType.Substitutions do
 
     {o, glyphs} =
       if coverloc != nil and ruleset != nil do
-        # Logger.debug "GSUB5.2 rule = #{inspect ruleset}"
         # find first match in this ruleset
         # TODO: flag might mean we need to filter ignored categories
         # ie; skip marks
@@ -759,7 +749,6 @@ defmodule OpenType.Substitutions do
               List.replace_at(acc, input_loc, replacement)
             end)
 
-          # Logger.debug "GSUB6.2 rule = #{inspect input} =>  #{inspect replaced}"
           {replaced, Enum.drop(glyphs, input_extra)}
         else
           {[g], glyphs}
@@ -1063,7 +1052,6 @@ defmodule OpenType.Substitutions do
   end
 
   def unfilter_glyphs(glyphs, skipped) do
-    # Logger.debug("unfilter #{inspect glyphs}, #{inspect skipped}")
     skipped
     |> Enum.reduce(glyphs, fn {g, i}, acc -> List.insert_at(acc, i, g) end)
   end

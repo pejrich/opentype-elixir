@@ -166,7 +166,6 @@ defmodule OpenType.Positioning do
   def apply_lookup({:parsed, 5, flag, mfs, data}, gdef, _lookups, _is_rtl, {glyphs, pos}) do
     {mark_coverage, base_coverage, base_array, mark_array} = data
 
-    Logger.debug("GPOS 5 - mark to ligature")
     g = filter_glyphs(glyphs, flag, gdef, mfs) |> Enum.to_list()
 
     {adjusted, d_glyphs} =
@@ -207,7 +206,6 @@ defmodule OpenType.Positioning do
     {_mark_coverage, _base_coverage, _base_array, _mark_array} = data
 
     # adjusted = apply_mark_to_base(mark_coverage, base_coverage, base_array, mark_array, flag, mfs, gdef, [hd(glyphs)], tl(glyphs), pos)
-    # Logger.debug "MKMK #{inspect glyphs} #{inspect adjusted}"
     # positioning = Enum.zip(pos, adjusted) |> Enum.map(fn {v1, v2} -> add_pos(v1,v2) end)
     # {glyphs, positioning, c, m}
     {glyphs, pos}
@@ -219,7 +217,6 @@ defmodule OpenType.Positioning do
     pos =
       case format do
         1 ->
-          Logger.debug("GPOS 7.1 - contextual positioning")
           pos
 
         2 ->
@@ -231,11 +228,9 @@ defmodule OpenType.Positioning do
           pos
 
         3 ->
-          Logger.debug("GPOS 7.3 - contextual positioning")
           pos
 
         _ ->
-          Logger.debug("GPOS 7 - contextual positioning format #{format}")
           pos
       end
 
@@ -248,11 +243,9 @@ defmodule OpenType.Positioning do
     pos =
       case format do
         1 ->
-          Logger.debug("GPOS 8.1 - chained contextual positioning")
           pos
 
         2 ->
-          Logger.debug("GPOS 8.2 - chained contextual positioning")
           pos
 
         3 ->
@@ -273,7 +266,6 @@ defmodule OpenType.Positioning do
           )
 
         _ ->
-          Logger.debug("GPOS 8 - chained contextual positioning format #{format}")
           pos
       end
 
@@ -497,7 +489,6 @@ defmodule OpenType.Positioning do
     val =
       case format do
         1 ->
-          Logger.debug("GPOS 7.1 - contextual positioning")
           nil
 
         2 ->
@@ -526,11 +517,9 @@ defmodule OpenType.Positioning do
           {coverage, rulesets, classes}
 
         3 ->
-          Logger.debug("GPOS 7.3 - contextual positioning")
           nil
 
         _ ->
-          Logger.debug("GPOS 7 - contextual positioning format #{format}")
           nil
       end
 
@@ -543,11 +532,9 @@ defmodule OpenType.Positioning do
     val =
       case format do
         1 ->
-          Logger.debug("GPOS 8.1 - chained contextual positioning")
           nil
 
         2 ->
-          Logger.debug("GPOS 8.2 - chained contextual positioning")
           nil
 
         3 ->
@@ -584,7 +571,6 @@ defmodule OpenType.Positioning do
           {bt_coverage, coverage, la_coverage, pos_records}
 
         _ ->
-          Logger.debug("GPOS 8 - chained contextual positioning format #{format}")
           nil
       end
 
@@ -893,7 +879,6 @@ defmodule OpenType.Positioning do
           if is_rtl do
             delta_x = exit_x + x_off
             # post-process -- our y_offset needs to be adjusted by next y_offset
-            # Logger.debug "GPOS 3 - cursive RTL delta #{inspect delta_x}, #{inspect delta_y}"
             [
               {:pos, x_off - delta_x, delta_y, x_adv - delta_x, y_adv},
               {:pos, x2Off, y2Off, entry_x + x2Off, y2Adv},
@@ -902,7 +887,6 @@ defmodule OpenType.Positioning do
           else
             delta_x = entry_x + x2Off
             # post-process -- next needs to adjust y_offset by our y_offset
-            # Logger.debug "GPOS 3 - cursive LTR delta #{inspect delta_x}, #{inspect delta_y}"
             [
               {:pos, x_off, delta_y, exit_x + x_off, y_adv},
               {:pos, x2Off - delta_x, y2Off, x2Adv - delta_x, y2Adv},
@@ -1016,7 +1000,6 @@ defmodule OpenType.Positioning do
           end)
 
         if rule != nil do
-          Logger.debug("GPOS7.2 rule = #{inspect(rule)}")
           {matched, subst_records} = rule
 
           input =
@@ -1040,7 +1023,6 @@ defmodule OpenType.Positioning do
           # probably want to prepend earlier ignored glyphs to remaining
           _remaining = Enum.slice(glyphs, length(matched), length(glyphs))
           _remaining_pos = Enum.slice(pos, length(matched), length(pos))
-          Logger.debug("#{inspect(input)} => #{inspect(replaced)}")
           # {replaced, remaining, remaining_pos}
           {[nil], glyphs, pos}
         else

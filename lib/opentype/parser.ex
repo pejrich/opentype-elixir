@@ -270,8 +270,6 @@ defmodule OpenType.Parser do
           typo_descend::signed-16, typo_line_gap::signed-16, _win_ascent::16, _win_descent::16,
           v0rest::binary>> = raw_os2
 
-        Logger.debug("OS/2 ver #{os2ver} found")
-
         # os2ver 1 or greater has code page range fields
         v1rest =
           if os2ver > 0 do
@@ -316,8 +314,6 @@ defmodule OpenType.Parser do
         # for osver > 4 also fields:
         # lower_optical_point_size::16, upper_optical_point_size::16
       else
-        Logger.debug("No OS/2 info, synthetic data")
-
         %{
           ttf
           | ascent: Enum.at(bbox, 3),
@@ -606,17 +602,8 @@ defmodule OpenType.Parser do
   defp extract_off_header(table, ttf, data) do
     raw = raw_table(ttf, table, data)
 
-    if raw == nil do
-      Logger.debug("No #{table} table")
-    end
-
     <<version_maj::16, version_min::16, script_list_off::16, feature_list_off::16,
       lookup_list_off::16, _::binary>> = raw
-
-    # if 1.1, also feature_variations::u32
-    if {version_maj, version_min} != {1, 0} do
-      Logger.debug("#{table} Header #{version_maj}.#{version_min}")
-    end
 
     lookup_list = subtable(raw, lookup_list_off)
     <<n_lookups::16, ll::binary-size(n_lookups)-unit(16), _::binary>> = lookup_list
@@ -740,10 +727,6 @@ defmodule OpenType.Parser do
     <<reordering_table::16, req::16, n_features::16, fx::binary-size(n_features)-unit(16),
       _::binary>> = feature_part
 
-    if reordering_table != 0 do
-      Logger.debug("Lang #{tag} has a reordering table")
-    end
-
     indices = for <<(<<x::16>> <- fx)>>, do: x
     indices = if req == 0xFFFF, do: indices, else: [req | indices]
     {tag, indices}
@@ -754,10 +737,6 @@ defmodule OpenType.Parser do
 
     <<feature_params_offset::16, n_lookups::16, fx::binary-size(n_lookups)-unit(16), _::binary>> =
       lookup_part
-
-    if feature_params_offset != 0 do
-      Logger.debug("Feature #{tag} has feature params")
-    end
 
     indices = for <<(<<x::16>> <- fx)>>, do: x
     {tag, indices}
