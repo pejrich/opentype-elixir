@@ -109,6 +109,57 @@ defmodule OpenType do
     ]
   end
 
+  def substitute_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
+    # use the font CMAP to convert the initial text
+    # into a series of glyphs
+    glyphs =
+      text
+      |> String.to_charlist()
+      |> Enum.map(fn cid -> %GlyphInfo{glyph: Map.get(ttf.cid2gid, cid, 0), codepoints: [cid]} end)
+
+    # detect script if not passed in
+    script =
+      if script == nil do
+        Layout.detect_script(text)
+      else
+        script
+      end
+
+    # shaper = layout.selectshaper(script)
+    # {glyphs, glyph_features} = shaper.mark_local_features(glyphs)
+    # opentype.substitutions(glyphs, font, script, lang, features, glyph_features)
+
+    # see OpenType feature registry for required, never disabled,
+    # and recommended features
+    features =
+      if features == nil do
+        default_features()
+      else
+        features
+      end
+
+    # per OpenType spec, enable "palt" when "kern" is enabled
+    features = if "kern" in features, do: ["palt" | features], else: features
+
+    # mark any per-glyph features
+    {per_glyph_features, assignments} = Layout.shape_glyphs(script, glyphs)
+
+    glyphs =
+      if length(assignments) > 0 do
+        glyphs
+        |> Enum.with_index()
+        |> Enum.map(fn {g, i} -> %{g | tag: Enum.at(assignments, i)} end)
+      else
+        glyphs
+      end
+
+    handle_substitutions(glyphs, ttf, script, lang, features, per_glyph_features)
+    |> Enum.flat_map(fn %{glyph: g, codepoints: c} ->
+      List.wrap(ttf.gid2cid[g] || c)
+    end)
+    |> to_string()
+  end
+
   @doc """
   Returns a series of positioned glyphs (a tuple of {glyphs, positions}).
 
