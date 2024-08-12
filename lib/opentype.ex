@@ -109,7 +109,7 @@ defmodule OpenType do
     ]
   end
 
-  def substitute_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
+  def sub_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
     # use the font CMAP to convert the initial text
     # into a series of glyphs
     glyphs =
@@ -154,6 +154,10 @@ defmodule OpenType do
       end
 
     handle_substitutions(glyphs, ttf, script, lang, features, per_glyph_features)
+  end
+
+  def substitute_text(ttf, text, features \\ nil, script \\ nil, lang \\ nil) do
+    sub_text(ttf, text, features, script, lang)
     |> Enum.flat_map(fn %{glyph: g, codepoints: c} ->
       List.wrap(ttf.gid2cid[g] || c)
     end)
